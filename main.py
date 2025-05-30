@@ -147,6 +147,13 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         progress_bar.progress(20)
         
         stock_data = fetch_stock_data(ticker_input, start_date, end_date)
+        if stock_data is None or stock_data.empty:
+            st.error(
+                f"❌ No data found for ticker '{ticker_input}'. "
+                "Check the symbol, your internet connection, or try a different date range. "
+                "The ticker might be delisted or have no available data."
+            )
+            st.stop()
         
         # Clear progress indicators
         progress_bar.progress(100)
