@@ -147,20 +147,46 @@ def fetch_stock_data(ticker, start, end, max_retries=3):
         resp.raise_for_status()
         js = resp.json()
         if "Time Series (Daily)" not in js:
+            # Alpha Vantage error message
+            if "Note" in js:
+                st.error("Alpha Vantage API limit reached. Please wait a minute and try again.")
+            elif "Error Message" in js:
+                st.error(f"Alpha Vantage error: {js['Error Message']}")
+            else:
+                st.error("Alpha Vantage returned no data. Check symbol or try later.")
             return None
-        df = pd.DataFrame.from_dict(js["Time Series (Daily)"], orient="index", dtype=float)
+        # Parse and rename columns
+        df = pd.DataFrame.from_dict(js["Time Series (Daily)"], orient="index")
         df.index = pd.to_datetime(df.index)
         df = df.sort_index()
         df = df.loc[(df.index >= pd.to_datetime(start)) & (df.index <= pd.to_datetime(end))]
-        df.rename(columns={
-            "5. adjusted close": "Close",
+        # Rename columns to match yfinance
+        col_map = {
+            "1. open": "Open",
+            "2. high": "High",
+            "3. low": "Low",
+            "4. close": "Close",
+            "5. adjusted close": "Close",  # prefer adjusted close
             "6. volume": "Volume"
-        }, inplace=True)
-        # Ensure required columns
-        if "Close" not in df or "Volume" not in df:
+        }
+        df = df.rename(columns=col_map)
+        # Use adjusted close if available
+        if "5. adjusted close" in js["Time Series (Daily)"][next(iter(js["Time Series (Daily)"]))]:
+            df["Close"] = df["Close"].astype(float)
+        else:
+            df["Close"] = df["Close"].astype(float)
+        # Convert all columns to float if possible
+        for col in ["Open", "High", "Low", "Close", "Volume"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        # Drop rows with missing Close or Volume
+        df = df.dropna(subset=["Close", "Volume"])
+        if df.empty:
+            st.error("Alpha Vantage returned no usable data for this symbol and date range.")
             return None
         return df
-    except Exception:
+    except Exception as ex:
+        st.error(f"Alpha Vantage fallback failed: {ex}")
         return None
 
 # Main prediction button
