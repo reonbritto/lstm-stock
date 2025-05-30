@@ -7,22 +7,24 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from datetime import datetime, timedelta
+import optuna
 import warnings
 warnings.filterwarnings('ignore')
 
+# Custom Attention Layer
 class Attention(Layer):
     def __init__(self, **kwargs):
         super(Attention, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        self.W = self.add_weight(name='attention_weight', 
-                                shape=(input_shape[-1], 1), 
-                                initializer='random_normal', 
-                                trainable=True)
-        self.b = self.add_weight(name='attention_bias', 
-                                shape=(input_shape[1], 1), 
-                                initializer='zeros', 
-                                trainable=True)
+        self.W = self.add_weight(name='attention_weight',
+                                 shape=(input_shape[-1], 1),
+                                 initializer='random_normal',
+                                 trainable=True)
+        self.b = self.add_weight(name='attention_bias',
+                                 shape=(input_shape[1], 1),
+                                 initializer='zeros',
+                                 trainable=True)
         super(Attention, self).build(input_shape)
 
     def call(self, x):
@@ -47,6 +49,12 @@ def add_technical_indicators(df):
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
     return df
 
+def add_sentiment_features(df):
+    # Placeholder for news sentiment scores (e.g., from FinBERT)
+    # In practice, use an API or NLP model to get sentiment scores
+    df['Sentiment'] = np.random.uniform(-1, 1, len(df))  # Dummy sentiment scores
+    return df
+
 def prepare_data(data, time_steps=60):
     for col in ['Close', 'Volume']:
         if col not in data.columns:
@@ -61,10 +69,11 @@ def prepare_data(data, time_steps=60):
     df['Return'] = df['Close'].pct_change(periods=5)
     df['Volatility'] = df['Close'].rolling(window=10).std()
     df = add_technical_indicators(df)
+    df = add_sentiment_features(df)  # Add sentiment features
     df = df.fillna(method='ffill').fillna(method='bfill')
     feature_columns = [
         'Close', 'Volume', '20_MA', 'Price_Change', 'Volume_MA', 'Return', 'Volatility',
-        'Log_Return', 'Momentum', 'RSI', 'EMA_20'
+        'Log_Return', 'Momentum', 'RSI', 'EMA_20', 'Sentiment'
     ]
     features = df[feature_columns].values
     mask = np.isfinite(features).all(axis=1)
@@ -72,7 +81,33 @@ def prepare_data(data, time_steps=60):
     df_clean = df[mask]
     return features, df_clean, feature_columns
 
-def train_lstm_model(data, time_steps=60):
+def build_lstm_model(trial, time_steps, n_features):
+    # Define hyperparameter search space with Optuna
+    lstm_units_1 = trial.suggest_int('lstm_units_1', 128, 512, step=64)
+    lstm_units_2 = trial.suggest_int('lstm_units_2', 64, 256, step=32)
+    lstm_units_3 = trial.suggest_int('lstm_units_3', 32, 128, step=16)
+    dropout_rate_1 = trial.suggest_float('dropout_rate_1', 0.2, 0.5, step=0.1)
+    dropout_rate_2 = trial.suggest_float('dropout_rate_2', 0.1, 0.4, step=0.1)
+    dropout_rate_3 = trial.suggest_float('dropout_rate_3', 0.1, 0.3, step=0.1)
+    
+    inputs = Input(shape=(time_steps, n_features))
+    x = LSTM(lstm_units_1, return_sequences=True)(inputs)
+    x = BatchNormalization()(x)
+    x = Dropout(dropout_rate_1)(x)
+    x = LSTM(lstm_units_2, return_sequences=True)(x)
+    x = BatchNormalization()(x)
+    x = Dropout(dropout_rate_2)(x)
+    x = LSTM(lstm_units_3, return_sequences=True)(x)
+    x = BatchNormalization()(x)
+    x = Dropout(dropout_rate_3)(x)
+    x = Attention()(x)
+    x = Dense(64, activation='relu')(x)
+    outputs = Dense(1)(x)
+    model = Model(inputs=inputs, outputs=outputs)
+    model.compile(optimizer='adam', loss='huber', metrics=['mae'])
+    return model
+
+def train_lstm_model(data, time_steps=60, n_trials=20):
     try:
         if '20_MA' not in data.columns:
             data = data.copy()
@@ -90,33 +125,41 @@ def train_lstm_model(data, time_steps=60):
         train_size = int(len(X) * 0.8)
         X_train, X_test = X[:train_size], X[train_size:]
         y_train, y_test = y[:train_size], y[train_size:]
-        # Functional API for LSTM with Attention
-        inputs = Input(shape=(time_steps, len(feature_columns)))
-        x = LSTM(256, return_sequences=True)(inputs)
-        x = BatchNormalization()(x)
-        x = Dropout(0.4)(x)
-        x = LSTM(128, return_sequences=True)(x)
-        x = BatchNormalization()(x)
-        x = Dropout(0.3)(x)
-        x = LSTM(64, return_sequences=True)(x)
-        x = BatchNormalization()(x)
-        x = Dropout(0.2)(x)
-        x = Attention()(x)
-        x = Dense(64, activation='relu')(x)
-        outputs = Dense(1)(x)
-        model = Model(inputs=inputs, outputs=outputs)
-        model.compile(optimizer='adam', loss='huber', metrics=['mae'])
+
+        # Optuna objective function
+        def objective(trial):
+            model = build_lstm_model(trial, time_steps, len(feature_columns))
+            batch_size = trial.suggest_categorical('batch_size', [16, 32, 64])
+            early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+            reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.00005)
+            history = model.fit(
+                X_train, y_train,
+                epochs=50,  # Reduced for faster optimization
+                batch_size=batch_size,
+                validation_data=(X_test, y_test),
+                callbacks=[early_stopping, reduce_lr],
+                verbose=0
+            )
+            return min(history.history['val_loss'])
+
+        # Run Optuna optimization
+        study = optuna.create_study(direction='minimize')
+        study.optimize(objective, n_trials=n_trials)
+        
+        # Train final model with best hyperparameters
+        best_params = study.best_params
+        model = build_lstm_model(optuna.trial.FixedTrial(best_params), time_steps, len(feature_columns))
         early_stopping = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=7, min_lr=0.00005)
         history = model.fit(
             X_train, y_train,
             epochs=150,
-            batch_size=32,
+            batch_size=best_params['batch_size'],
             validation_data=(X_test, y_test),
             callbacks=[early_stopping, reduce_lr],
             verbose=0
         )
-        return model, scaler, X_test, y_test, df_clean, feature_columns, history
+        return model, scaler, X_test, y_test, df_clean, feature_columns, history, best_params
     except Exception as e:
         raise Exception(f"Error training model: {str(e)}")
 
@@ -147,6 +190,7 @@ def predict_future_prices(model, scaler, data, feature_columns, days=30, time_st
             last_row[8] = pred - current_sequence[0, -10, 0] if time_steps > 10 else 0
             last_row[9] = 50
             last_row[10] = pred
+            last_row[11] = np.random.uniform(-1, 1)  # Dummy sentiment
             current_sequence = np.roll(current_sequence, -1, axis=1)
             current_sequence[0, -1] = last_row
         predictions = np.array(predictions).reshape(-1, 1)
