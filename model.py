@@ -234,13 +234,16 @@ def predict_future_prices(model, scaler, data, feature_columns, days=30, time_st
         raise Exception(f"Error predicting future prices: {str(e)}")
 
 def evaluate_model(model, scaler, X_test, y_test, feature_columns):
+    """Evaluate model performance and return metrics as a dict"""
     try:
-        test_predictions = model.predict(X_test, verbose=0).flatten()
-        dummy_features = np.zeros((len(test_predictions), len(feature_columns) - 1))
-        test_pred_full = np.hstack([test_predictions.reshape(-1, 1), dummy_features])
-        test_actual_full = np.hstack([y_test.reshape(-1, 1), dummy_features])
-        test_pred_inverse = scaler.inverse_transform(test_pred_full)[:, 0]
-        test_actual_inverse = scaler.inverse_transform(test_actual_full)[:, 0]
+        # Predict and inverse-transform only the target (first) feature
+        test_pred_scaled = model.predict(X_test, verbose=0).flatten()
+        # RobustScaler: x_scaled = (x - center_) / scale_
+        center = scaler.center_[0]
+        scale = scaler.scale_[0]
+        test_pred_inverse = test_pred_scaled * scale + center
+        test_actual_inverse = y_test * scale + center
+         
         mae = mean_absolute_error(test_actual_inverse, test_pred_inverse)
         rmse = np.sqrt(mean_squared_error(test_actual_inverse, test_pred_inverse))
         mape = np.mean(np.abs((test_actual_inverse - test_pred_inverse) / test_actual_inverse)) * 100
