@@ -8,6 +8,9 @@ from model import train_lstm_model, predict_future_prices, calculate_metrics
 import numpy as np
 import ssl
 import os
+import time
+import json
+from requests.exceptions import RequestException
 
 # SSL configuration
 try:
@@ -109,20 +112,32 @@ if start_date >= end_date:
     st.stop()
 
 # Fetch stock data function
-def fetch_stock_data(ticker, start, end):
+def fetch_stock_data(ticker, start, end, max_retries=3):
     """
-    Robust yfinance download with error handling for timezone and delisting issues.
+    Robust yfinance download with user-agent, retry logic, and JSONDecodeError handling.
     """
-    try:
-        data = yf.download(ticker, start=start, end=end, progress=False)
-        if data.empty:
-            raise ValueError("No data returned from Yahoo Finance.")
-        # Sometimes timezone info is missing for delisted/invalid symbols
-        if not hasattr(data.index, 'tz'):
-            data.index = pd.to_datetime(data.index)
-        return data
-    except Exception as e:
-        return None
+    import requests
+    session = requests.Session()
+    session.headers.update({'User-Agent': 'Mozilla/5.0'})
+    for attempt in range(max_retries):
+        try:
+            data = yf.download(
+                ticker, start=start, end=end, progress=False, session=session, threads=False
+            )
+            if not data.empty:
+                # Sometimes timezone info is missing for delisted/invalid symbols
+                if not hasattr(data.index, 'tz'):
+                    data.index = pd.to_datetime(data.index)
+                return data
+        except json.JSONDecodeError:
+            # Yahoo sometimes returns invalid JSON, especially for invalid/delisted symbols
+            break
+        except RequestException:
+            pass
+        except Exception:
+            pass
+        time.sleep(1)
+    return None
 
 # Main prediction button
 if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=True):
