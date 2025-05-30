@@ -197,30 +197,39 @@ def predict_future_prices(model, scaler, data, feature_columns, days=30, time_st
         last_sequence = scaled_data[-time_steps:].copy()
         predictions = []
         current_sequence = last_sequence.reshape(1, time_steps, len(feature_columns))
+        center = scaler.center_[0]
+        scale = scaler.scale_[0]
+        last_close = data['Close'].iloc[-1]
         for day in range(days):
-            pred = model.predict(current_sequence, verbose=0)[0, 0]
+            pred_scaled = model.predict(current_sequence, verbose=0)[0, 0]
+            # Inverse transform the prediction immediately
+            pred = pred_scaled * scale + center
+            # Prevent nan/inf propagation
+            if np.isnan(pred) or np.isinf(pred):
+                pred = last_close
             predictions.append(pred)
             last_row = current_sequence[0, -1].copy()
-            last_row[0] = pred
-            if len(predictions) > 1:
-                price_change = (pred - predictions[-2]) / predictions[-2] if predictions[-2] != 0 else 0
-                last_row[3] = price_change
+            # Update scaled value for next prediction
+            last_row[0] = (pred - center) / scale
+            if len(predictions) > 1 and predictions[-2] != 0:
+                price_change = (pred - predictions[-2]) / predictions[-2]
+            else:
+                price_change = 0
+            last_row[3] = price_change
             last_row[1] = last_row[1] * (1 + np.random.normal(0, 0.02))
             last_row[2] = last_row[2] * (1 + np.random.normal(0, 0.01))
             last_row[4] = last_row[1]
             last_row[5] = last_row[3]
             last_row[6] = np.std([seq[0] for seq in current_sequence[0]])
-            last_row[7] = np.log(pred / current_sequence[0, -1, 0] + 1e-9)
-            last_row[8] = pred - current_sequence[0, -10, 0] if time_steps > 10 else 0
+            last_row[7] = np.log(pred / last_close + 1e-9) if last_close != 0 else 0
+            last_row[8] = pred - last_close
             last_row[9] = 50
             last_row[10] = pred
-            last_row[11] = np.random.uniform(-1, 1)  # Dummy sentiment
+            last_row[11] = np.random.uniform(-1, 1)
             current_sequence = np.roll(current_sequence, -1, axis=1)
             current_sequence[0, -1] = last_row
-        predictions = np.array(predictions).reshape(-1, 1)
-        dummy_features = np.tile(scaled_data[-1, 1:], (len(predictions), 1))
-        predictions_full = np.hstack([predictions, dummy_features])
-        predictions_inverse = scaler.inverse_transform(predictions_full)[:, 0]
+            last_close = pred
+        # predictions are already in original scale
         last_date = data.index[-1]
         future_dates = []
         current_date = last_date
@@ -229,7 +238,7 @@ def predict_future_prices(model, scaler, data, feature_columns, days=30, time_st
             while current_date.weekday() >= 5:
                 current_date += timedelta(days=1)
             future_dates.append(current_date)
-        return predictions_inverse, future_dates
+        return np.array(predictions), future_dates
     except Exception as e:
         raise Exception(f"Error predicting future prices: {str(e)}")
 
