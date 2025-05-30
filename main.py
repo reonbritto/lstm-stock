@@ -115,21 +115,21 @@ if start_date >= end_date:
 # Fetch stock data function
 def fetch_stock_data(ticker, start, end, max_retries=3):
     """
-    Fetch stock data with yf.Ticker.history(), retry on failure.
+    Fetch stock data using yf.Ticker(ticker).history() with retry logic.
+    If data is empty, it's likely the ticker is incorrect, delisted, or lacks data.
     """
     for attempt in range(max_retries):
         try:
-            hist = yf.Ticker(ticker).history(start=start, end=end, interval='1d', auto_adjust=False)
-            if not hist.empty:
-                if not hasattr(hist.index, 'tz'):
-                    hist.index = pd.to_datetime(hist.index)
-                # Ensure required columns exist
-                for col in ['Open','High','Low','Close','Volume']:
-                    if col not in hist.columns:
-                        hist[col] = hist['Close']
-                return hist
-        except Exception:
-            time.sleep(1)
+            data = yf.Ticker(ticker).history(start=start, end=end, interval='1d', auto_adjust=False)
+            if not data.empty:
+                data.index = pd.to_datetime(data.index)
+                for col in ['Open', 'High', 'Low']:
+                    if col not in data.columns or data[col].isnull().all():
+                        data[col] = data['Close']
+                return data
+        except Exception as e:
+            print(f"Attempt {attempt+1} to fetch ticker '{ticker}' failed: {e}")
+        time.sleep(1)
     return None
 
 # Main prediction button
@@ -147,51 +147,6 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         progress_bar.progress(20)
         
         stock_data = fetch_stock_data(ticker_input, start_date, end_date)
-        
-        if stock_data is None or stock_data.empty:
-            st.error(
-                f"❌ No data found for ticker '{ticker_input}'. "
-                "Check the symbol, your internet connection, or try a different date range. "
-                "If this persists, the symbol may be delisted or Yahoo Finance API may be temporarily unavailable."
-            )
-            st.stop()
-        
-        # Calculate 20_MA if not present
-        if '20_MA' not in stock_data.columns:
-            stock_data['20_MA'] = stock_data['Close'].rolling(window=20).mean().fillna(method='bfill')
-        
-        # Step 2: Data validation
-        status_text.text("🔍 Validating data...")
-        progress_bar.progress(40)
-        
-        required_days = time_steps + 50  # Minimum required data points
-        if len(stock_data) < required_days:
-            st.error(f"❌ Insufficient data. Found {len(stock_data)} days, need at least {required_days} days.")
-            st.stop()
-        
-        # Step 3: Train model
-        status_text.text("🧠 Training AI model...")
-        progress_bar.progress(60)
-        
-        model, scaler, X_test, y_test, df_clean, feature_columns, history = train_lstm_model(
-            stock_data, time_steps=time_steps
-        )
-        
-        # Step 4: Make predictions
-        status_text.text("🔮 Generating predictions...")
-        progress_bar.progress(80)
-        
-        future_predictions, future_dates = predict_future_prices(
-            model, scaler, stock_data, feature_columns, days=prediction_days, time_steps=time_steps
-        )
-        
-        # Step 5: Evaluate model
-        status_text.text("📊 Evaluating performance...")
-        progress_bar.progress(90)
-        
-        mae, rmse, mape, test_predictions, test_actual = evaluate_model(
-            model, scaler, X_test, y_test, feature_columns
-        )
         
         # Clear progress indicators
         progress_bar.progress(100)
