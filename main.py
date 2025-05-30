@@ -191,9 +191,13 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         status_text.text("📊 Evaluating performance...")
         progress_bar.progress(90)
         
-        mae, rmse, mape, test_predictions, test_actual = evaluate_model(
-            model, scaler, X_test, y_test, feature_columns
-        )
+        metrics = evaluate_model(model, scaler, X_test, y_test, feature_columns)
+        mae = metrics["mae"]
+        rmse = metrics["rmse"]
+        mape = metrics["mape"]
+        r2 = metrics["r2"]
+        test_predictions = metrics["test_pred_inverse"]
+        test_actual = metrics["test_actual_inverse"]
         
         # Clear progress indicators
         progress_bar.progress(100)
@@ -305,23 +309,12 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
             # Performance metrics
             st.subheader("📈 Model Performance")
             
-            st.metric(
-                label="Mean Absolute Error",
-                value=f"${mae:.2f}",
-                help="Average prediction error"
-            )
-            
-            st.metric(
-                label="Root Mean Square Error",
-                value=f"${rmse:.2f}",
-                help="Standard deviation of prediction errors"
-            )
-            
-            st.metric(
-                label="Mean Absolute Percentage Error",
-                value=f"{mape:.1f}%",
-                help="Average percentage error"
-            )
+            st.table({
+                "MAE ($)": [f"{mae:.2f}"],
+                "RMSE ($)": [f"{rmse:.2f}"],
+                "MAPE (%)": [f"{mape:.2f}"],
+                "R²": [f"{r2:.3f}"]
+            })
             
             # Prediction summary
             st.subheader("🔮 Prediction Summary")

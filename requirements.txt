@@ -1,4 +1,4 @@
-yfinance==0.2.14
+yfinance
 tensorflow==2.15.0
 ml-dtypes==0.2.0
 tensorboard==2.15.0
