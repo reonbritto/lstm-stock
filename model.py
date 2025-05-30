@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, RobustScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
@@ -9,9 +9,25 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import warnings
 warnings.filterwarnings('ignore')
 
+def add_technical_indicators(df):
+    # Log returns
+    df['Log_Return'] = np.log(df['Close'] / df['Close'].shift(1))
+    # Momentum (10 days)
+    df['Momentum'] = df['Close'] - df['Close'].shift(10)
+    # RSI (14 days)
+    delta = df['Close'].diff()
+    up = delta.clip(lower=0)
+    down = -1 * delta.clip(upper=0)
+    roll_up = up.rolling(14).mean()
+    roll_down = down.rolling(14).mean()
+    rs = roll_up / (roll_down + 1e-9)
+    df['RSI'] = 100.0 - (100.0 / (1.0 + rs))
+    # EMA (20 days)
+    df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    return df
+
 def prepare_data(data, time_steps=60):
-    """Prepare and clean data for LSTM model with more features."""
-    # Ensure required columns exist and are numeric
+    """Prepare and clean data for LSTM model with more advanced features."""
     for col in ['Close', 'Volume']:
         if col not in data.columns:
             raise ValueError(f"Missing required column: {col}")
@@ -25,8 +41,12 @@ def prepare_data(data, time_steps=60):
     df['Volume_MA'] = df['Volume'].rolling(window=10).mean()
     df['Return'] = df['Close'].pct_change(periods=5)
     df['Volatility'] = df['Close'].rolling(window=10).std()
+    df = add_technical_indicators(df)
     df = df.fillna(method='ffill').fillna(method='bfill')
-    feature_columns = ['Close', 'Volume', '20_MA', 'Price_Change', 'Volume_MA', 'Return', 'Volatility']
+    feature_columns = [
+        'Close', 'Volume', '20_MA', 'Price_Change', 'Volume_MA', 'Return', 'Volatility',
+        'Log_Return', 'Momentum', 'RSI', 'EMA_20'
+    ]
     features = df[feature_columns].values
     mask = np.isfinite(features).all(axis=1)
     features = features[mask]
@@ -34,13 +54,13 @@ def prepare_data(data, time_steps=60):
     return features, df_clean, feature_columns
 
 def train_lstm_model(data, time_steps=60):
-    """Train LSTM model with improved architecture and validation"""
+    """Train a deeper LSTM model with more regularization and advanced features."""
     try:
         if '20_MA' not in data.columns:
             data = data.copy()
             data['20_MA'] = data['Close'].rolling(window=20).mean().fillna(method='bfill')
         features, df_clean, feature_columns = prepare_data(data, time_steps)
-        scaler = MinMaxScaler(feature_range=(0, 1))
+        scaler = RobustScaler()
         scaled_data = scaler.fit_transform(features)
         X, y = [], []
         for i in range(time_steps, len(scaled_data)):
@@ -52,25 +72,28 @@ def train_lstm_model(data, time_steps=60):
         train_size = int(len(X) * 0.8)
         X_train, X_test = X[:train_size], X[train_size:]
         y_train, y_test = y[:train_size], y[train_size:]
-        # Improved LSTM model
+        # Deeper LSTM model
         model = Sequential([
-            LSTM(units=128, return_sequences=True, input_shape=(time_steps, len(feature_columns))),
+            LSTM(256, return_sequences=True, input_shape=(time_steps, len(feature_columns))),
+            BatchNormalization(),
+            Dropout(0.4),
+            LSTM(128, return_sequences=True),
             BatchNormalization(),
             Dropout(0.3),
-            LSTM(units=64, return_sequences=True),
+            LSTM(64, return_sequences=True),
             BatchNormalization(),
-            Dropout(0.3),
-            LSTM(units=32),
             Dropout(0.2),
-            Dense(units=32, activation='relu'),
-            Dense(units=1)
+            LSTM(32),
+            Dropout(0.2),
+            Dense(64, activation='relu'),
+            Dense(1)
         ])
         model.compile(optimizer='adam', loss='huber', metrics=['mae'])
-        early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.0001)
+        early_stopping = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=7, min_lr=0.00005)
         history = model.fit(
             X_train, y_train,
-            epochs=100,
+            epochs=150,
             batch_size=32,
             validation_data=(X_test, y_test),
             callbacks=[early_stopping, reduce_lr],
@@ -104,6 +127,11 @@ def predict_future_prices(model, scaler, data, feature_columns, days=30, time_st
             last_row[4] = last_row[1]  # Volume_MA update
             last_row[5] = last_row[3]  # Return update
             last_row[6] = np.std([seq[0] for seq in current_sequence[0]])  # Volatility update
+            # Update new features
+            last_row[7] = np.log(pred / current_sequence[0, -1, 0] + 1e-9)  # Log_Return
+            last_row[8] = pred - current_sequence[0, -10, 0] if time_steps > 10 else 0  # Momentum
+            last_row[9] = 50  # RSI dummy (for future, keep neutral)
+            last_row[10] = pred  # EMA_20 dummy (for future, just use pred)
             current_sequence = np.roll(current_sequence, -1, axis=1)
             current_sequence[0, -1] = last_row
         predictions = np.array(predictions).reshape(-1, 1)
