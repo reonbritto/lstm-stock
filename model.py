@@ -1,20 +1,42 @@
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler, RobustScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization
+from sklearn.preprocessing import RobustScaler
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalization, Layer
+import tensorflow.keras.backend as K
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-from datetime import datetime, timedelta
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
+class Attention(Layer):
+    def __init__(self, **kwargs):
+        super(Attention, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.W = self.add_weight(name='attention_weight', 
+                                shape=(input_shape[-1], 1), 
+                                initializer='random_normal', 
+                                trainable=True)
+        self.b = self.add_weight(name='attention_bias', 
+                                shape=(input_shape[1], 1), 
+                                initializer='zeros', 
+                                trainable=True)
+        super(Attention, self).build(input_shape)
+
+    def call(self, x):
+        e = K.tanh(K.dot(x, self.W) + self.b)
+        e = K.squeeze(e, axis=-1)
+        alpha = K.softmax(e)
+        alpha = K.expand_dims(alpha, axis=-1)
+        context = x * alpha
+        context = K.sum(context, axis=1)
+        return context
+
 def add_technical_indicators(df):
-    # Log returns
     df['Log_Return'] = np.log(df['Close'] / df['Close'].shift(1))
-    # Momentum (10 days)
     df['Momentum'] = df['Close'] - df['Close'].shift(10)
-    # RSI (14 days)
     delta = df['Close'].diff()
     up = delta.clip(lower=0)
     down = -1 * delta.clip(upper=0)
@@ -22,12 +44,10 @@ def add_technical_indicators(df):
     roll_down = down.rolling(14).mean()
     rs = roll_up / (roll_down + 1e-9)
     df['RSI'] = 100.0 - (100.0 / (1.0 + rs))
-    # EMA (20 days)
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
     return df
 
 def prepare_data(data, time_steps=60):
-    """Prepare and clean data for LSTM model with more advanced features."""
     for col in ['Close', 'Volume']:
         if col not in data.columns:
             raise ValueError(f"Missing required column: {col}")
@@ -35,7 +55,6 @@ def prepare_data(data, time_steps=60):
     if len(data) < time_steps + 20:
         raise ValueError(f"Insufficient data. Need at least {time_steps + 20} data points.")
     df = data.copy()
-    # Feature engineering
     df['20_MA'] = df['Close'].rolling(window=20).mean()
     df['Price_Change'] = df['Close'].pct_change()
     df['Volume_MA'] = df['Volume'].rolling(window=10).mean()
@@ -54,7 +73,6 @@ def prepare_data(data, time_steps=60):
     return features, df_clean, feature_columns
 
 def train_lstm_model(data, time_steps=60):
-    """Train a deeper LSTM model with more regularization and advanced features."""
     try:
         if '20_MA' not in data.columns:
             data = data.copy()
@@ -65,29 +83,28 @@ def train_lstm_model(data, time_steps=60):
         X, y = [], []
         for i in range(time_steps, len(scaled_data)):
             X.append(scaled_data[i-time_steps:i])
-            y.append(scaled_data[i, 0])  # Predict Close price
+            y.append(scaled_data[i, 0])
         X, y = np.array(X), np.array(y)
         if len(X) == 0:
             raise ValueError("No sequences could be created. Check your data.")
         train_size = int(len(X) * 0.8)
         X_train, X_test = X[:train_size], X[train_size:]
         y_train, y_test = y[:train_size], y[train_size:]
-        # Deeper LSTM model
-        model = Sequential([
-            LSTM(256, return_sequences=True, input_shape=(time_steps, len(feature_columns))),
-            BatchNormalization(),
-            Dropout(0.4),
-            LSTM(128, return_sequences=True),
-            BatchNormalization(),
-            Dropout(0.3),
-            LSTM(64, return_sequences=True),
-            BatchNormalization(),
-            Dropout(0.2),
-            LSTM(32),
-            Dropout(0.2),
-            Dense(64, activation='relu'),
-            Dense(1)
-        ])
+        # Functional API for LSTM with Attention
+        inputs = Input(shape=(time_steps, len(feature_columns)))
+        x = LSTM(256, return_sequences=True)(inputs)
+        x = BatchNormalization()(x)
+        x = Dropout(0.4)(x)
+        x = LSTM(128, return_sequences=True)(x)
+        x = BatchNormalization()(x)
+        x = Dropout(0.3)(x)
+        x = LSTM(64, return_sequences=True)(x)
+        x = BatchNormalization()(x)
+        x = Dropout(0.2)(x)
+        x = Attention()(x)
+        x = Dense(64, activation='relu')(x)
+        outputs = Dense(1)(x)
+        model = Model(inputs=inputs, outputs=outputs)
         model.compile(optimizer='adam', loss='huber', metrics=['mae'])
         early_stopping = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=7, min_lr=0.00005)
@@ -104,7 +121,6 @@ def train_lstm_model(data, time_steps=60):
         raise Exception(f"Error training model: {str(e)}")
 
 def predict_future_prices(model, scaler, data, feature_columns, days=30, time_steps=60):
-    """Predict future prices with improved logic"""
     try:
         if '20_MA' not in data.columns:
             data = data.copy()
@@ -124,14 +140,13 @@ def predict_future_prices(model, scaler, data, feature_columns, days=30, time_st
                 last_row[3] = price_change
             last_row[1] = last_row[1] * (1 + np.random.normal(0, 0.02))
             last_row[2] = last_row[2] * (1 + np.random.normal(0, 0.01))
-            last_row[4] = last_row[1]  # Volume_MA update
-            last_row[5] = last_row[3]  # Return update
-            last_row[6] = np.std([seq[0] for seq in current_sequence[0]])  # Volatility update
-            # Update new features
-            last_row[7] = np.log(pred / current_sequence[0, -1, 0] + 1e-9)  # Log_Return
-            last_row[8] = pred - current_sequence[0, -10, 0] if time_steps > 10 else 0  # Momentum
-            last_row[9] = 50  # RSI dummy (for future, keep neutral)
-            last_row[10] = pred  # EMA_20 dummy (for future, just use pred)
+            last_row[4] = last_row[1]
+            last_row[5] = last_row[3]
+            last_row[6] = np.std([seq[0] for seq in current_sequence[0]])
+            last_row[7] = np.log(pred / current_sequence[0, -1, 0] + 1e-9)
+            last_row[8] = pred - current_sequence[0, -10, 0] if time_steps > 10 else 0
+            last_row[9] = 50
+            last_row[10] = pred
             current_sequence = np.roll(current_sequence, -1, axis=1)
             current_sequence[0, -1] = last_row
         predictions = np.array(predictions).reshape(-1, 1)
@@ -151,7 +166,6 @@ def predict_future_prices(model, scaler, data, feature_columns, days=30, time_st
         raise Exception(f"Error predicting future prices: {str(e)}")
 
 def evaluate_model(model, scaler, X_test, y_test, feature_columns):
-    """Evaluate model performance and return metrics as a dict"""
     try:
         test_predictions = model.predict(X_test, verbose=0).flatten()
         dummy_features = np.zeros((len(test_predictions), len(feature_columns) - 1))
