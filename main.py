@@ -11,6 +11,7 @@ import os
 import time
 import json
 from requests.exceptions import RequestException
+import requests
 
 # SSL configuration
 try:
@@ -112,32 +113,55 @@ if start_date >= end_date:
     st.stop()
 
 # Fetch stock data function
+ALPHA_VANTAGE_API_KEY = "GU1M9PSPG1G4L6SX"  # <-- Your Alpha Vantage API key
+
 def fetch_stock_data(ticker, start, end, max_retries=3):
     """
-    Robust yfinance download with user-agent, retry logic, and JSONDecodeError handling.
+    Try yfinance first, then fallback to Alpha Vantage if yfinance fails.
     """
-    import requests
+    import json
     session = requests.Session()
     session.headers.update({'User-Agent': 'Mozilla/5.0'})
+    # Try yfinance
     for attempt in range(max_retries):
         try:
             data = yf.download(
                 ticker, start=start, end=end, progress=False, session=session, threads=False
             )
             if not data.empty:
-                # Sometimes timezone info is missing for delisted/invalid symbols
                 if not hasattr(data.index, 'tz'):
                     data.index = pd.to_datetime(data.index)
                 return data
         except json.JSONDecodeError:
-            # Yahoo sometimes returns invalid JSON, especially for invalid/delisted symbols
             break
-        except RequestException:
-            pass
         except Exception:
             pass
         time.sleep(1)
-    return None
+    # Fallback: Alpha Vantage
+    try:
+        url = (
+            f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED"
+            f"&symbol={ticker}&outputsize=full&apikey={ALPHA_VANTAGE_API_KEY}"
+        )
+        resp = session.get(url, timeout=10)
+        resp.raise_for_status()
+        js = resp.json()
+        if "Time Series (Daily)" not in js:
+            return None
+        df = pd.DataFrame.from_dict(js["Time Series (Daily)"], orient="index", dtype=float)
+        df.index = pd.to_datetime(df.index)
+        df = df.sort_index()
+        df = df.loc[(df.index >= pd.to_datetime(start)) & (df.index <= pd.to_datetime(end))]
+        df.rename(columns={
+            "5. adjusted close": "Close",
+            "6. volume": "Volume"
+        }, inplace=True)
+        # Ensure required columns
+        if "Close" not in df or "Volume" not in df:
+            return None
+        return df
+    except Exception:
+        return None
 
 # Main prediction button
 if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=True):
