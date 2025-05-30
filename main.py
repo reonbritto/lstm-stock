@@ -93,6 +93,16 @@ time_steps = st.sidebar.selectbox(
     help="Number of historical days to use for prediction"
 )
 
+# Advanced settings
+st.sidebar.subheader("⚙️ Advanced Settings")
+n_trials = st.sidebar.slider(
+    "Optuna Trials", 
+    min_value=5, 
+    max_value=50, 
+    value=10,
+    help="Number of hyperparameter optimization trials (more = better but slower)"
+)
+
 # Main interface
 st.markdown('<h1 class="main-header">🤖 AI Stock Price Predictor</h1>', unsafe_allow_html=True)
 st.markdown("""
@@ -175,8 +185,8 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         status_text.text("🧠 Training AI model...")
         progress_bar.progress(60)
         
-        model, scaler, X_test, y_test, df_clean, feature_columns, history = train_lstm_model(
-            stock_data, time_steps=time_steps
+        model, scaler, X_test, y_test, df_clean, feature_columns, history, best_params = train_lstm_model(
+            stock_data, time_steps=time_steps, n_trials=n_trials
         )
         
         # Step 4: Make predictions
@@ -369,6 +379,12 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 st.write(f"• Lookback period: {time_steps} days")
                 st.write(f"• Prediction horizon: {prediction_days} days")
                 st.write(f"• Training epochs: {len(history.history['loss'])}")
+                
+        # Hyperparameter optimization results
+        with st.expander("🔧 Hyperparameter Optimization"):
+            st.write("**Best Parameters Found:**")
+            for param, value in best_params.items():
+                st.write(f"• {param}: {value}")
         
         # Recent data table
         with st.expander("📊 Recent Data"):
