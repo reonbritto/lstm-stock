@@ -2,7 +2,10 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import RobustScaler
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalization, Layer
+from tensorflow.keras.layers import (
+    Input, Conv1D, LSTM, MultiHeadAttention, Dense, Dropout, BatchNormalization, Layer
+)
+from tensorflow.keras.optimizers.schedules import ExponentialDecay
 import tensorflow.keras.backend as K
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -82,29 +85,50 @@ def prepare_data(data, time_steps=60):
     return features, df_clean, feature_columns
 
 def build_lstm_model(trial, time_steps, n_features):
-    # Define hyperparameter search space with Optuna
-    lstm_units_1 = trial.suggest_int('lstm_units_1', 128, 512, step=64)
-    lstm_units_2 = trial.suggest_int('lstm_units_2', 64, 256, step=32)
-    lstm_units_3 = trial.suggest_int('lstm_units_3', 32, 128, step=16)
-    dropout_rate_1 = trial.suggest_float('dropout_rate_1', 0.2, 0.5, step=0.1)
-    dropout_rate_2 = trial.suggest_float('dropout_rate_2', 0.1, 0.4, step=0.1)
-    dropout_rate_3 = trial.suggest_float('dropout_rate_3', 0.1, 0.3, step=0.1)
-    
+    # Hyperparams
+    u1 = trial.suggest_int('lstm_units_1', 128, 512, step=64)
+    u2 = trial.suggest_int('lstm_units_2', 64, 256, step=32)
+    u3 = trial.suggest_int('lstm_units_3', 32, 128, step=16)
+    d1 = trial.suggest_float('dropout_rate_1', 0.2, 0.5, step=0.1)
+    d2 = trial.suggest_float('dropout_rate_2', 0.1, 0.4, step=0.1)
+    d3 = trial.suggest_float('dropout_rate_3', 0.1, 0.3, step=0.1)
+
     inputs = Input(shape=(time_steps, n_features))
-    x = LSTM(lstm_units_1, return_sequences=True)(inputs)
+    x = Conv1D(64, 3, activation='relu', padding='causal')(inputs)
     x = BatchNormalization()(x)
-    x = Dropout(dropout_rate_1)(x)
-    x = LSTM(lstm_units_2, return_sequences=True)(x)
+
+    x = LSTM(u1, return_sequences=True)(x)
+    x = Dropout(d1)(x)
     x = BatchNormalization()(x)
-    x = Dropout(dropout_rate_2)(x)
-    x = LSTM(lstm_units_3, return_sequences=True)(x)
+
+    x = LSTM(u2, return_sequences=True)(x)
+    x = Dropout(d2)(x)
     x = BatchNormalization()(x)
-    x = Dropout(dropout_rate_3)(x)
-    x = Attention()(x)
+
+    x = LSTM(u3, return_sequences=True)(x)
+    x = Dropout(d3)(x)
+
+    attn = MultiHeadAttention(num_heads=4, key_dim=u3)(x, x)
+    x = BatchNormalization()(attn)
+    x = Dropout(d3)(x)
+
     x = Dense(64, activation='relu')(x)
     outputs = Dense(1)(x)
+
+    # Learning‐rate schedule
+    lr_schedule = ExponentialDecay(
+        initial_learning_rate=1e-3,
+        decay_steps=5000,
+        decay_rate=0.5,
+        staircase=True
+    )
     model = Model(inputs=inputs, outputs=outputs)
-    model.compile(optimizer='adam', loss='huber', metrics=['mae'])
+    model.compile(
+        optimizer='adam',
+        loss='mse',
+        metrics=['mae','mape'],
+        run_eagerly=False
+    )
     return model
 
 def train_lstm_model(data, time_steps=60, n_trials=20):
