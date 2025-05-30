@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
-from model import train_lstm_model, predict_future_prices, calculate_metrics
+from model import train_lstm_model, predict_future_prices, evaluate_model
 import numpy as np
 import ssl
 import os
@@ -113,16 +113,14 @@ if start_date >= end_date:
     st.stop()
 
 # Fetch stock data function
-ALPHA_VANTAGE_API_KEY = "GU1M9PSPG1G4L6SX"
-
 def fetch_stock_data(ticker, start, end, max_retries=3):
     """
-    Try yfinance first, then fallback to Alpha Vantage if yfinance fails.
-    Handles Alpha Vantage rate limits and JSON errors.
+    Download stock data using yfinance with retry and user-agent.
     """
+    import requests
+    import json
     session = requests.Session()
     session.headers.update({'User-Agent': 'Mozilla/5.0'})
-    # Try yfinance
     for attempt in range(max_retries):
         try:
             data = yf.download(
@@ -137,47 +135,7 @@ def fetch_stock_data(ticker, start, end, max_retries=3):
         except Exception:
             pass
         time.sleep(1)
-    # Fallback: Alpha Vantage
-    try:
-        url = (
-            f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED"
-            f"&symbol={ticker}&outputsize=full&apikey={ALPHA_VANTAGE_API_KEY}"
-        )
-        resp = session.get(url, timeout=10)
-        resp.raise_for_status()
-        try:
-            js = resp.json()
-        except json.JSONDecodeError:
-            return None
-        # Handle Alpha Vantage API limit or error message
-        if "Note" in js or "Error Message" in js:
-            return None
-        if "Time Series (Daily)" not in js:
-            return None
-        df = pd.DataFrame.from_dict(js["Time Series (Daily)"], orient="index")
-        df.index = pd.to_datetime(df.index)
-        df = df.sort_index()
-        df = df.loc[(df.index >= pd.to_datetime(start)) & (df.index <= pd.to_datetime(end))]
-        df.rename(columns={
-            "1. open": "Open",
-            "2. high": "High",
-            "3. low": "Low",
-            "4. close": "Close",
-            "5. adjusted close": "Close",
-            "6. volume": "Volume"
-        }, inplace=True)
-        for col in ["Open", "High", "Low", "Close", "Volume"]:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-        for col in ["Open", "High", "Low"]:
-            if col not in df.columns or df[col].isnull().all():
-                df[col] = df["Close"]
-        if "Close" not in df or "Volume" not in df:
-            return None
-        df = df[["Open", "High", "Low", "Close", "Volume"]]
-        return df
-    except Exception:
-        return None
+    return None
 
 # Main prediction button
 if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=True):
@@ -199,8 +157,7 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
             st.error(
                 f"❌ No data found for ticker '{ticker_input}'. "
                 "Check the symbol, your internet connection, or try a different date range. "
-                "If this persists, the symbol may be delisted, Yahoo Finance/Alpha Vantage API may be temporarily unavailable, "
-                "or you may have hit the Alpha Vantage free API rate limit (5 requests/minute, 500/day)."
+                "If this persists, the symbol may be delisted or Yahoo Finance API may be temporarily unavailable."
             )
             st.stop()
         
@@ -237,7 +194,7 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         status_text.text("📊 Evaluating performance...")
         progress_bar.progress(90)
         
-        mae, rmse, mape, test_predictions, test_actual = calculate_metrics(
+        mae, rmse, mape, test_predictions, test_actual = evaluate_model(
             model, scaler, X_test, y_test, feature_columns
         )
         

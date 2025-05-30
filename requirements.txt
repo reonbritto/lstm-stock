@@ -13,13 +13,13 @@ urllib3==1.26.16
 certifi>=2024.2.2
 setuptools>=65.5.0
 wheel>=0.40.0
+# HTML parsing deps (required by yfinance)
 lxml==4.9.3
 html5lib==1.1
 beautifulsoup4==4.12.2
 multitasking==0.0.11
 pytz==2023.3
 frozendict==2.3.8
-peewee>=3.16.2
 appdirs==1.4.4
 user-agent==0.1.10
-alpha_vantage==2.3.1
+# Remove alpha_vantage, peewee, etc. — only yfinance is used now
