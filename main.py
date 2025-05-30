@@ -4,11 +4,10 @@ import pandas as pd
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
-from model import train_lstm_model, predict_future_prices, evaluate_model
+from model import train_lstm_model, predict_future_prices, calculate_metrics
 import numpy as np
 import ssl
 import os
-import time
 
 # SSL configuration
 try:
@@ -109,6 +108,22 @@ if start_date >= end_date:
     st.error("❌ Start date must be before end date.")
     st.stop()
 
+# Fetch stock data function
+def fetch_stock_data(ticker, start, end):
+    """
+    Robust yfinance download with error handling for timezone and delisting issues.
+    """
+    try:
+        data = yf.download(ticker, start=start, end=end, progress=False)
+        if data.empty:
+            raise ValueError("No data returned from Yahoo Finance.")
+        # Sometimes timezone info is missing for delisted/invalid symbols
+        if not hasattr(data.index, 'tz'):
+            data.index = pd.to_datetime(data.index)
+        return data
+    except Exception as e:
+        return None
+
 # Main prediction button
 if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=True):
     
@@ -123,16 +138,19 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         status_text.text("📥 Fetching stock data...")
         progress_bar.progress(20)
         
-        stock_data = yf.download(
-            ticker_input, 
-            start=start_date, 
-            end=end_date, 
-            progress=False
-        )
+        stock_data = fetch_stock_data(ticker_input, start_date, end_date)
         
-        if stock_data.empty:
-            st.error(f"❌ No data found for ticker '{ticker_input}'. Please check the symbol and try again.")
+        if stock_data is None or stock_data.empty:
+            st.error(
+                f"❌ No data found for ticker '{ticker_input}'. "
+                "Check the symbol, your internet connection, or try a different date range. "
+                "If this persists, the symbol may be delisted or Yahoo Finance is temporarily unavailable."
+            )
             st.stop()
+        
+        # Calculate 20_MA if not present
+        if '20_MA' not in stock_data.columns:
+            stock_data['20_MA'] = stock_data['Close'].rolling(window=20).mean().fillna(method='bfill')
         
         # Step 2: Data validation
         status_text.text("🔍 Validating data...")
@@ -163,7 +181,7 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         status_text.text("📊 Evaluating performance...")
         progress_bar.progress(90)
         
-        mae, rmse, mape, test_predictions, test_actual = evaluate_model(
+        mae, rmse, mape, test_predictions, test_actual = calculate_metrics(
             model, scaler, X_test, y_test, feature_columns
         )
         

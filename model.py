@@ -40,6 +40,10 @@ def prepare_data(data, time_steps=60):
 def train_lstm_model(data, time_steps=60):
     """Train LSTM model with improved architecture and validation"""
     try:
+        # Ensure 20_MA is present
+        if '20_MA' not in data.columns:
+            data['20_MA'] = data['Close'].rolling(window=20).mean().fillna(method='bfill')
+        
         # Prepare data
         features, df_clean, feature_columns = prepare_data(data, time_steps)
         
@@ -101,9 +105,13 @@ def train_lstm_model(data, time_steps=60):
     except Exception as e:
         raise Exception(f"Error training model: {str(e)}")
 
-def predict_future_prices(model, scaler, data, feature_columns, days=30, time_steps=60):
+def predict_future_prices(model, scaler, data, days=30, time_steps=60):
     """Predict future prices with improved logic"""
     try:
+        # Ensure 20_MA is present
+        if '20_MA' not in data.columns:
+            data['20_MA'] = data['Close'].rolling(window=20).mean().fillna(method='bfill')
+        
         # Prepare data
         features, df_clean, _ = prepare_data(data, time_steps)
         
