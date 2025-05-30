@@ -238,12 +238,17 @@ def evaluate_model(model, scaler, X_test, y_test, feature_columns):
     try:
         # Predict and inverse-transform only the target (first) feature
         test_pred_scaled = model.predict(X_test, verbose=0).flatten()
+        n = len(test_pred_scaled)
+        # Align actuals to predictions
+        actual_scaled = y_test[-n:]  # use last n actual values
+        
         # RobustScaler: x_scaled = (x - center_) / scale_
         center = scaler.center_[0]
         scale = scaler.scale_[0]
+        
         test_pred_inverse = test_pred_scaled * scale + center
-        test_actual_inverse = y_test * scale + center
-         
+        test_actual_inverse = actual_scaled * scale + center
+        
         mae = mean_absolute_error(test_actual_inverse, test_pred_inverse)
         rmse = np.sqrt(mean_squared_error(test_actual_inverse, test_pred_inverse))
         mape = np.mean(np.abs((test_actual_inverse - test_pred_inverse) / test_actual_inverse)) * 100
