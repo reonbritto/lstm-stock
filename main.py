@@ -118,6 +118,7 @@ ALPHA_VANTAGE_API_KEY = "GU1M9PSPG1G4L6SX"
 def fetch_stock_data(ticker, start, end, max_retries=3):
     """
     Try yfinance first, then fallback to Alpha Vantage if yfinance fails.
+    Handles Alpha Vantage rate limits and JSON errors.
     """
     session = requests.Session()
     session.headers.update({'User-Agent': 'Mozilla/5.0'})
@@ -144,14 +145,19 @@ def fetch_stock_data(ticker, start, end, max_retries=3):
         )
         resp = session.get(url, timeout=10)
         resp.raise_for_status()
-        js = resp.json()
+        try:
+            js = resp.json()
+        except json.JSONDecodeError:
+            return None
+        # Handle Alpha Vantage API limit or error message
+        if "Note" in js or "Error Message" in js:
+            return None
         if "Time Series (Daily)" not in js:
             return None
         df = pd.DataFrame.from_dict(js["Time Series (Daily)"], orient="index")
         df.index = pd.to_datetime(df.index)
         df = df.sort_index()
         df = df.loc[(df.index >= pd.to_datetime(start)) & (df.index <= pd.to_datetime(end))]
-        # Map columns to match yfinance
         df.rename(columns={
             "1. open": "Open",
             "2. high": "High",
@@ -160,18 +166,14 @@ def fetch_stock_data(ticker, start, end, max_retries=3):
             "5. adjusted close": "Close",
             "6. volume": "Volume"
         }, inplace=True)
-        # Convert columns to float
         for col in ["Open", "High", "Low", "Close", "Volume"]:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
-        # If Open/High/Low missing, fill with Close
         for col in ["Open", "High", "Low"]:
             if col not in df.columns or df[col].isnull().all():
                 df[col] = df["Close"]
-        # Ensure required columns
         if "Close" not in df or "Volume" not in df:
             return None
-        # Reorder columns for downstream code
         df = df[["Open", "High", "Low", "Close", "Volume"]]
         return df
     except Exception:
@@ -197,7 +199,8 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
             st.error(
                 f"❌ No data found for ticker '{ticker_input}'. "
                 "Check the symbol, your internet connection, or try a different date range. "
-                "If this persists, the symbol may be delisted or Yahoo Finance is temporarily unavailable."
+                "If this persists, the symbol may be delisted, Yahoo Finance/Alpha Vantage API may be temporarily unavailable, "
+                "or you may have hit the Alpha Vantage free API rate limit (5 requests/minute, 500/day)."
             )
             st.stop()
         
