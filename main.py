@@ -115,26 +115,21 @@ if start_date >= end_date:
 # Fetch stock data function
 def fetch_stock_data(ticker, start, end, max_retries=3):
     """
-    Download stock data using yfinance with retry and user-agent.
+    Fetch stock data with yf.Ticker.history(), retry on failure.
     """
-    import requests
-    import json
-    session = requests.Session()
-    session.headers.update({'User-Agent': 'Mozilla/5.0'})
     for attempt in range(max_retries):
         try:
-            data = yf.download(
-                ticker, start=start, end=end, progress=False, session=session, threads=False
-            )
-            if not data.empty:
-                if not hasattr(data.index, 'tz'):
-                    data.index = pd.to_datetime(data.index)
-                return data
-        except json.JSONDecodeError:
-            break
+            hist = yf.Ticker(ticker).history(start=start, end=end, interval='1d', auto_adjust=False)
+            if not hist.empty:
+                if not hasattr(hist.index, 'tz'):
+                    hist.index = pd.to_datetime(hist.index)
+                # Ensure required columns exist
+                for col in ['Open','High','Low','Close','Volume']:
+                    if col not in hist.columns:
+                        hist[col] = hist['Close']
+                return hist
         except Exception:
-            pass
-        time.sleep(1)
+            time.sleep(1)
     return None
 
 # Main prediction button
