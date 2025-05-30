@@ -11,6 +11,12 @@ warnings.filterwarnings('ignore')
 
 def prepare_data(data, time_steps=60):
     """Prepare and clean data for LSTM model"""
+    # Ensure required columns exist and are numeric
+    for col in ['Close', 'Volume']:
+        if col not in data.columns:
+            raise ValueError(f"Missing required column: {col}")
+        data[col] = pd.to_numeric(data[col], errors="coerce")
+    
     # Ensure we have enough data
     if len(data) < time_steps + 20:
         raise ValueError(f"Insufficient data. Need at least {time_steps + 20} data points.")
