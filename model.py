@@ -255,10 +255,10 @@ def evaluate_model(model, scaler, X_test, y_test, feature_columns):
         test_pred_inverse = test_pred_scaled * scale + center
         test_actual_inverse = actual_scaled * scale + center
 
-        mae = mean_absolute_error(test_actual_inverse, test_pred_inverse)
-        rmse = np.sqrt(mean_squared_error(test_actual_inverse, test_pred_inverse))
-        mape = np.mean(np.abs((test_actual_inverse - test_pred_inverse) / test_actual_inverse)) * 100
-        r2 = r2_score(test_actual_inverse, test_pred_inverse)
+        mae = float(mean_absolute_error(test_actual_inverse, test_pred_inverse))
+        rmse = float(np.sqrt(mean_squared_error(test_actual_inverse, test_pred_inverse)))
+        mape = float(np.mean(np.abs((test_actual_inverse - test_pred_inverse) / test_actual_inverse)) * 100)
+        r2 = float(r2_score(test_actual_inverse, test_pred_inverse))
         metrics = {
             "mae": mae,
             "rmse": rmse,
