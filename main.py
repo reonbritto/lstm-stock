@@ -97,10 +97,17 @@ time_steps = st.sidebar.selectbox(
 st.sidebar.subheader("⚙️ Advanced Settings")
 n_trials = st.sidebar.slider(
     "Optuna Trials", 
-    min_value=5, 
-    max_value=50, 
-    value=5,
+    min_value=3, 
+    max_value=5, 
+    value=1,
     help="Number of hyperparameter optimization trials (more = better but slower)"
+)
+
+# Add a sidebar option for model explainability
+st.sidebar.subheader("🧠 Explainability")
+show_feature_importance = st.sidebar.checkbox(
+    "Show Feature Importance (SHAP)", value=False,
+    help="Visualize which features most influence the model's predictions"
 )
 
 # Main interface
@@ -403,6 +410,40 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 'Volume': '{:,.0f}'
             }))
         
+        # After displaying main results, add explainability if requested
+        if show_feature_importance:
+            import shap
+            st.subheader("🔍 Model Explainability (SHAP)")
+            # Use a sample from test set for SHAP
+            explainer = shap.DeepExplainer(model, X_test[:50])
+            shap_values = explainer.shap_values(X_test[:50])
+            st.set_option('deprecation.showPyplotGlobalUse', False)
+            shap.summary_plot(shap_values, features=X_test[:50], feature_names=feature_columns, show=False)
+            st.pyplot(bbox_inches='tight', dpi=80, pad_inches=0.1)
+
+        # Add download button for predictions
+        pred_df = pd.DataFrame({
+            "Date": future_dates,
+            "Predicted_Close": future_predictions
+        })
+        st.download_button(
+            label="Download Predictions as CSV",
+            data=pred_df.to_csv(index=False),
+            file_name=f"{ticker_input}_predictions.csv",
+            mime="text/csv"
+        )
+
+        # Add a section for model training loss curve
+        with st.expander("📉 Model Training Loss Curve"):
+            st.line_chart(history.history['loss'], use_container_width=True)
+
+        # Add a section for actual vs predicted plot on test set
+        with st.expander("📈 Actual vs Predicted (Test Set)"):
+            st.line_chart({
+                "Actual": metrics["test_actual_inverse"],
+                "Predicted": metrics["test_pred_inverse"]
+            })
+
     except Exception as e:
         progress_container.empty()
         st.error(f"❌ An error occurred: {str(e)}")

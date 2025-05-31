@@ -202,14 +202,12 @@ def predict_future_prices(model, scaler, data, feature_columns, days=30, time_st
         last_close = data['Close'].iloc[-1]
         for day in range(days):
             pred_scaled = model.predict(current_sequence, verbose=0)[0, 0]
-            # Inverse transform the prediction immediately
             pred = pred_scaled * scale + center
-            # Prevent nan/inf propagation
-            if np.isnan(pred) or np.isinf(pred):
+            # Clamp prediction to avoid negative/absurd values
+            if np.isnan(pred) or np.isinf(pred) or pred < 0 or pred > last_close * 10:
                 pred = last_close
             predictions.append(pred)
             last_row = current_sequence[0, -1].copy()
-            # Update scaled value for next prediction
             last_row[0] = (pred - center) / scale
             if len(predictions) > 1 and predictions[-2] != 0:
                 price_change = (pred - predictions[-2]) / predictions[-2]
