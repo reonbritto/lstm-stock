@@ -414,10 +414,11 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         if show_feature_importance:
             import shap
             st.subheader("🔍 Model Explainability (SHAP)")
-            # explain the last-step scalar output directly
+            # Use a sample from test set for SHAP
             background = X_test[:50]
-            explainer = shap.DeepExplainer(model, background)
-            shap_values = explainer.shap_values(background)
+            # Use GradientExplainer for TF Keras models
+            explainer = shap.GradientExplainer((model.input, model.output), background)
+            shap_values = explainer.shap_values(background)[0]
             # shap_values shape is (batch, features)
             st.set_option('deprecation.showPyplotGlobalUse', False)
             shap.summary_plot(
