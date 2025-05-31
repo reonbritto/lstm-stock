@@ -99,7 +99,7 @@ n_trials = st.sidebar.slider(
     "Optuna Trials", 
     min_value=5, 
     max_value=50, 
-    value=10,
+    value=5,
     help="Number of hyperparameter optimization trials (more = better but slower)"
 )
 
@@ -196,7 +196,14 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         future_predictions, future_dates = predict_future_prices(
             model, scaler, stock_data, feature_columns, days=prediction_days, time_steps=time_steps
         )
-        
+        # Ensure future_predictions is a 1D float array for formatting
+        if isinstance(future_predictions, np.ndarray):
+            future_predictions = future_predictions.astype(float).flatten()
+        else:
+            future_predictions = np.array(future_predictions, dtype=float).flatten()
+        # Remove nan/inf from predictions for display
+        future_predictions = np.nan_to_num(future_predictions, nan=0.0, posinf=0.0, neginf=0.0)
+
         # Step 5: Evaluate model
         status_text.text("📊 Evaluating performance...")
         progress_bar.progress(90)
@@ -318,27 +325,26 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         with col2:
             # Performance metrics
             st.subheader("📈 Model Performance")
-            
             st.table({
-                "MAE ($)": [f"{mae:.2f}"],
-                "RMSE ($)": [f"{rmse:.2f}"],
-                "MAPE (%)": [f"{mape:.2f}"],
-                "R²": [f"{r2:.3f}"]
+                "MAE ($)": [f"{float(mae):.2f}"],
+                "RMSE ($)": [f"{float(rmse):.2f}"],
+                "MAPE (%)": [f"{float(mape):.2f}"],
+                "R²": [f"{float(r2):.3f}"]
             })
             
             # Prediction summary
             st.subheader("🔮 Prediction Summary")
             
-            current_price = stock_data['Close'].iloc[-1]
-            predicted_price = future_predictions[-1]
+            current_price = float(stock_data['Close'].iloc[-1])
+            predicted_price = float(future_predictions[-1]) if len(future_predictions) > 0 else float('nan')
             price_change = predicted_price - current_price
-            price_change_pct = (price_change / current_price) * 100
-            
+            price_change_pct = (price_change / current_price) * 100 if current_price != 0 else 0
+
             st.metric(
                 label="Current Price",
                 value=f"${current_price:.2f}"
             )
-            
+
             st.metric(
                 label=f"Predicted Price ({prediction_days}d)",
                 value=f"${predicted_price:.2f}",
