@@ -3,7 +3,8 @@ import pandas as pd
 from sklearn.preprocessing import RobustScaler
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
-    Input, Conv1D, LSTM, MultiHeadAttention, Dense, Dropout, BatchNormalization, Layer
+    Input, Conv1D, LSTM, MultiHeadAttention, Dense, Dropout, BatchNormalization,
+    GlobalAveragePooling1D, Layer
 )
 from tensorflow.keras.optimizers.schedules import ExponentialDecay
 import tensorflow.keras.backend as K
@@ -112,16 +113,11 @@ def build_lstm_model(trial, time_steps, n_features):
     x = BatchNormalization()(attn)
     x = Dropout(d3)(x)
 
+    # pool over time to get a vector
+    x = GlobalAveragePooling1D()(x)
     x = Dense(64, activation='relu')(x)
     outputs = Dense(1)(x)
 
-    # Learning‐rate schedule
-    lr_schedule = ExponentialDecay(
-        initial_learning_rate=1e-3,
-        decay_steps=5000,
-        decay_rate=0.5,
-        staircase=True
-    )
     model = Model(inputs=inputs, outputs=outputs)
     model.compile(
         optimizer='adam',
