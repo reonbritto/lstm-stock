@@ -415,7 +415,24 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
             import shap
             st.subheader("🔍 Model Explainability (SHAP)")
             # Use a sample from test set for SHAP
-            explainer = shap.DeepExplainer(model, X_test[:50])
+            # Fix: Use model output as a single value (not sequence)
+            # Use a wrapper to get only the last output for each sequence
+            class LastStepModelWrapper:
+                def __init__(self, model):
+                    self.model = model
+                def predict(self, x):
+                    # x shape: (batch, time_steps, features)
+                    preds = self.model.predict(x)
+                    # preds shape: (batch, time_steps, 1) or (batch, time_steps)
+                    # Take the last time step
+                    if preds.ndim == 3:
+                        return preds[:, -1, 0]
+                    elif preds.ndim == 2:
+                        return preds[:, -1]
+                    else:
+                        return preds
+
+            explainer = shap.DeepExplainer(LastStepModelWrapper(model), X_test[:50])
             shap_values = explainer.shap_values(X_test[:50])
             st.set_option('deprecation.showPyplotGlobalUse', False)
             shap.summary_plot(shap_values, features=X_test[:50], feature_names=feature_columns, show=False)
