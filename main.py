@@ -415,27 +415,24 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
             import shap
             st.subheader("🔍 Model Explainability (SHAP)")
             # Use a sample from test set for SHAP
-            # Fix: Use model output as a single value (not sequence)
-            # Use a wrapper to get only the last output for each sequence
-            class LastStepModelWrapper:
-                def __init__(self, model):
-                    self.model = model
-                def predict(self, x):
-                    # x shape: (batch, time_steps, features)
-                    preds = self.model.predict(x)
-                    # preds shape: (batch, time_steps, 1) or (batch, time_steps)
-                    # Take the last time step
-                    if preds.ndim == 3:
-                        return preds[:, -1, 0]
-                    elif preds.ndim == 2:
-                        return preds[:, -1]
-                    else:
-                        return preds
-
-            explainer = shap.DeepExplainer(LastStepModelWrapper(model), X_test[:50])
-            shap_values = explainer.shap_values(X_test[:50])
+            # Use the Keras model directly, but only explain the last output for each sequence
+            # SHAP expects a Keras model, not a wrapper
+            # So, slice the output for SHAP summary plot
+            background = X_test[:50]
+            explainer = shap.DeepExplainer(model, background)
+            shap_values = explainer.shap_values(background)
+            # If output is 3D (batch, time_steps, 1), take last time step
+            if isinstance(shap_values, list):
+                shap_values = shap_values[0]
+            if shap_values.ndim == 3:
+                shap_values = shap_values[:, -1, :]
+                background_disp = background[:, -1, :]
+            elif shap_values.ndim == 2:
+                background_disp = background[:, -1, :]
+            else:
+                background_disp = background
             st.set_option('deprecation.showPyplotGlobalUse', False)
-            shap.summary_plot(shap_values, features=X_test[:50], feature_names=feature_columns, show=False)
+            shap.summary_plot(shap_values, features=background_disp, feature_names=feature_columns, show=False)
             st.pyplot(bbox_inches='tight', dpi=80, pad_inches=0.1)
 
         # Add download button for predictions
