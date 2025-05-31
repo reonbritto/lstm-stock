@@ -103,13 +103,6 @@ n_trials = st.sidebar.slider(
     help="Number of hyperparameter optimization trials (more = better but slower)"
 )
 
-# Add a sidebar option for model explainability
-st.sidebar.subheader("🧠 Explainability")
-show_feature_importance = st.sidebar.checkbox(
-    "Show Feature Importance (SHAP)", value=False,
-    help="Visualize which features most influence the model's predictions"
-)
-
 # Main interface
 st.markdown('<h1 class="main-header">🤖 AI Stock Price Predictor</h1>', unsafe_allow_html=True)
 st.markdown("""
@@ -410,22 +403,6 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 'Volume': '{:,.0f}'
             }))
         
-        # After displaying main results, add explainability if requested
-        if show_feature_importance:
-            import shap
-            st.subheader("🔍 Model Explainability (SHAP)")
-            # Use a sample from test set for SHAP
-            background = X_test[:50]
-            # Use GradientExplainer for TF Keras models
-            explainer = shap.GradientExplainer((model.input, model.output), background)
-            shap_values = explainer.shap_values(background)[0]
-            # shap_values shape is (batch, features)
-            st.set_option('deprecation.showPyplotGlobalUse', False)
-            shap.summary_plot(
-                shap_values, features=background, feature_names=feature_columns, show=False
-            )
-            st.pyplot(bbox_inches='tight', dpi=80, pad_inches=0.1)
-
         # Add download button for predictions
         pred_df = pd.DataFrame({
             "Date": future_dates,
