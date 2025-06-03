@@ -1,3 +1,4 @@
+import tensorflow.keras as keras
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
@@ -44,9 +45,10 @@ def train_and_evaluate(df, time_steps=60):
     model = build_simple_lstm_model((X.shape[1], X.shape[2]))
     early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
-    model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_test, y_test), callbacks=[early_stop], verbose=0)
+    history = model.fit(X_train, y_train, epochs=50, batch_size=32, 
+                        validation_data=(X_test, y_test), callbacks=[early_stop], verbose=0)
 
-    preds = model.predict(X_test)
+    preds = model.predict(X_test, verbose=0)
     actual = y_test
 
     # Inverse transform
@@ -57,7 +59,7 @@ def train_and_evaluate(df, time_steps=60):
 
     rmse = np.sqrt(mean_squared_error(actual_rescaled, preds_rescaled))
     print(f"Test RMSE: {rmse:.4f}")
-    return model, scaler, preds_rescaled, actual_rescaled
+    return model, scaler, preds_rescaled, actual_rescaled, history
 
 def predict_next_days(df, model, scaler, days=10, time_steps=60):
     df = df.copy()
@@ -78,47 +80,41 @@ def predict_next_days(df, model, scaler, days=10, time_steps=60):
         pred = pred_scaled * scaler.scale_[0] + scaler.center_[0]
         future_preds.append(pred)
 
-        # Create next row (dummy features)
+        # Create next row with realistic feature estimates
         next_row = sequence[-1].copy()
         next_row[0] = pred_scaled
-        next_row[1] = 0.01  # Dummy return
-        next_row[2] = sequence[:, 0].std()  # Dummy volatility
-        next_row[3] = sequence[:, 0].mean()
-        next_row[4] = sequence[:, 0].mean()
-
+        next_row[1] = sequence[-10:, 1].mean()  # Recent average return
+        next_row[2] = sequence[-10:, 2].mean()  # Recent average volatility
+        next_row[3] = np.mean(sequence[-20:, 0])  # Update MA_20
+        next_row[4] = np.mean(sequence[-20:, 0])  # Update EMA_20 approximation
         sequence = np.vstack([sequence[1:], next_row])
 
     return future_preds
 
 def train_lstm_model(df, time_steps=60):
-    # Wrapper for compatibility with main.py
-    model, scaler, preds_rescaled, actual_rescaled = train_and_evaluate(df, time_steps)
-    # For main.py compatibility, return dummy values for unused outputs
-    X_test = None
-    y_test = None
+    model, scaler, preds_rescaled, actual_rescaled, history = train_and_evaluate(df, time_steps)
+    X, y, _ = prepare_data_simple(df, time_steps)
+    split = int(0.8 * len(X))
+    X_test, y_test = X[split:], y[split:]
     df_clean = df
     feature_columns = ['Close', 'Return', 'Volatility', 'MA_20', 'EMA_20']
-    history = type('History', (), {'history': {'loss': [0]}})()  # Dummy history
     return model, scaler, X_test, y_test, df_clean, feature_columns, history
 
 def predict_future_prices(model, scaler, df, feature_columns, days=30, time_steps=60):
-    # Wrapper for compatibility with main.py
     preds = predict_next_days(df, model, scaler, days=days, time_steps=time_steps)
-    # Generate future dates
+    # Generate future dates (business days only)
     last_date = df.index[-1]
     future_dates = []
     current_date = last_date
     for _ in range(days):
         current_date += timedelta(days=1)
-        while current_date.weekday() >= 5:
+        while current_date.weekday() >= 5:  # Skip weekends
             current_date += timedelta(days=1)
         future_dates.append(current_date)
     return np.array(preds), future_dates
 
 def evaluate_model(model, scaler, X_test, y_test, feature_columns):
-    """Evaluate model performance and return metrics as a dict"""
     try:
-        # Predict and inverse-transform only the target (first) feature
         test_pred_scaled = model.predict(X_test, verbose=0).flatten()
         n = min(len(test_pred_scaled), len(y_test))
         test_pred_scaled = test_pred_scaled[-n:]
@@ -130,7 +126,8 @@ def evaluate_model(model, scaler, X_test, y_test, feature_columns):
 
         mae = float(mean_absolute_error(test_actual_inverse, test_pred_inverse))
         rmse = float(np.sqrt(mean_squared_error(test_actual_inverse, test_pred_inverse)))
-        mape = float(np.mean(np.abs((test_actual_inverse - test_pred_inverse) / test_actual_inverse)) * 100)
+        mape = float(np.mean(np.abs((test_actual_inverse - test_pred_inverse) / 
+                                    (test_actual_inverse + 1e-10))) * 100)
         r2 = float(r2_score(test_actual_inverse, test_pred_inverse))
         metrics = {
             "mae": mae,

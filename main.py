@@ -16,8 +16,8 @@ except AttributeError:
     pass
 
 st.set_page_config(
-    page_title="AI Stock Predictor", 
-    page_icon="📈", 
+    page_title="AI Stock Predictor",
+    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -38,7 +38,7 @@ st.sidebar.markdown("---")
 
 st.sidebar.subheader("📊 Stock Selection")
 ticker_input = st.sidebar.text_input(
-    "Stock Ticker", 
+    "Stock Ticker",
     value="AAPL"
 ).upper().strip()
 
@@ -46,13 +46,13 @@ st.sidebar.subheader("📅 Date Range")
 col1, col2 = st.sidebar.columns(2)
 with col1:
     start_date = st.date_input(
-        "Start Date", 
+        "Start Date",
         value=datetime.now() - timedelta(days=730),
         max_value=datetime.now() - timedelta(days=100)
     )
 with col2:
     end_date = st.date_input(
-        "End Date", 
+        "End Date",
         value=datetime.now(),
         min_value=start_date + timedelta(days=100),
         max_value=datetime.now()
@@ -60,13 +60,13 @@ with col2:
 
 st.sidebar.subheader("🔮 Prediction Settings")
 prediction_days = st.sidebar.selectbox(
-    "Forecast Horizon", 
-    options=[7, 14, 30, 60], 
+    "Forecast Horizon",
+    options=[7, 14, 30, 60],
     index=2
 )
 time_steps = st.sidebar.selectbox(
-    "Lookback Period", 
-    options=[30, 60, 90], 
+    "Lookback Period",
+    options=[30, 60, 90],
     index=1
 )
 
@@ -74,7 +74,7 @@ st.markdown('<h1 class="main-header">🤖 AI Stock Price Predictor</h1>', unsafe
 st.markdown("""
 <div style="text-align: center; margin-bottom: 2rem;">
     <p style="font-size: 1.2rem; color: #666;">
-        Advanced LSTM neural network for stock price forecasting
+        Powered by LSTM Neural Networks
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -92,14 +92,18 @@ def fetch_stock_data(ticker, start, end, max_retries=3):
             data = yf.Ticker(ticker).history(start=start, end=end, interval='1d', auto_adjust=False)
             if not data.empty:
                 data.index = pd.to_datetime(data.index)
+                required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+                if not all(col in data.columns for col in required_cols):
+                    raise ValueError("Missing required columns in data")
                 for col in ['Open', 'High', 'Low']:
-                    if col not in data.columns or data[col].isnull().all():
+                    if data[col].isnull().all():
                         data[col] = data['Close']
                 return data
-        except Exception:
-            pass
-        time.sleep(1)
-    return None
+            raise ValueError("Empty data returned")
+        except Exception as e:
+            print(f"Attempt {attempt + 1} failed: {str(e)}")
+            time.sleep(1)
+    raise ValueError(f"Failed to fetch data for {ticker} after {max_retries} attempts")
 
 if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=True):
     progress_container = st.container()
@@ -135,42 +139,28 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         future_predictions, future_dates = predict_future_prices(
             model, scaler, stock_data, feature_columns, days=prediction_days, time_steps=time_steps
         )
-        if isinstance(future_predictions, np.ndarray):
-            future_predictions = future_predictions.astype(float).flatten()
-        else:
-            future_predictions = np.array(future_predictions, dtype=float).flatten()
-        future_predictions = np.nan_to_num(future_predictions, nan=0.0, posinf=0.0, neginf=0.0)
-        # Step 5: Evaluate model
+        future_predictions = np.nan_to_num(future_predictions, nan=0.0, posinf=0.0, neginf=0.0).astype(float).flatten()
         status_text.text("📊 Evaluating performance...")
         progress_bar.progress(90)
-        # Only evaluate if test data is available
-        if X_test is not None and y_test is not None:
-            metrics = evaluate_model(model, scaler, X_test, y_test, feature_columns)
-        else:
-            metrics = {
-                "mae": 0.0, "rmse": 0.0, "mape": 0.0, "r2": 0.0,
-                "test_pred_inverse": np.array(future_predictions),
-                "test_actual_inverse": np.array(future_predictions)
-            }
-
+        metrics = evaluate_model(model, scaler, X_test, y_test, feature_columns)
+        
         mae = metrics.get("mae", 0.0)
         rmse = metrics.get("rmse", 0.0)
         mape = metrics.get("mape", 0.0)
         r2 = metrics.get("r2", 0.0)
         test_predictions = np.array(metrics.get("test_pred_inverse", []))
         test_actual = np.array(metrics.get("test_actual_inverse", []))
+
         progress_bar.progress(100)
         time.sleep(0.5)
         progress_container.empty()
         st.success("✅ Analysis completed successfully!")
 
-        # --- Fix: Ensure future_dates are pandas.Timestamp for plotting ---
+        # Ensure future_dates are pandas.Timestamp
         future_dates = pd.to_datetime(future_dates)
-        # If future_dates is not unique, make it unique for plotting
         if len(set(future_dates)) != len(future_dates):
             future_dates = pd.date_range(start=future_dates[0], periods=len(future_dates), freq="B")
 
-        # --- Fix: Ensure metrics are visible and charts update correctly ---
         col1, col2 = st.columns([3, 1])
         with col1:
             fig = make_subplots(
@@ -215,10 +205,7 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
             )
             # Add prediction confidence interval
             last_price = stock_data['Close'].iloc[-1]
-            if test_actual.shape == test_predictions.shape and test_actual.size > 0:
-                std_dev = np.std(test_actual - test_predictions)
-            else:
-                std_dev = np.std(future_predictions) if len(future_predictions) > 1 else 0.0
+            std_dev = np.std(test_actual - test_predictions) if test_actual.size > 0 else np.std(future_predictions)
             upper_bound = np.array(future_predictions) + 2 * std_dev
             lower_bound = np.array(future_predictions) - 2 * std_dev
             fig.add_trace(
@@ -328,23 +315,22 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
             st.line_chart(history.history['loss'], use_container_width=True)
         with st.expander("📈 Actual vs Predicted (Test Set)"):
             if test_actual.size > 0 and test_predictions.size > 0:
+                test_dates = stock_data.index[-len(test_actual):]
                 st.line_chart({
-                    "Actual": test_actual,
-                    "Predicted": test_predictions
+                    "Actual": pd.Series(test_actual, index=test_dates),
+                    "Predicted": pd.Series(test_predictions, index=test_dates)
                 })
             else:
                 st.info("Not enough test data for actual vs predicted plot.")
     except Exception as e:
-        try:
-            progress_container.empty()
-        except Exception:
-            pass
+        progress_container.empty()
         st.error(f"❌ An error occurred: {str(e)}")
         st.info("💡 **Troubleshooting tips:**\n"
                 "• Check if the ticker symbol is valid\n"
                 "• Ensure sufficient historical data is available\n"
                 "• Try a different date range\n"
                 "• Check your internet connection")
+        st.button("🔄 Retry Analysis", type="secondary", key="retry")
 else:
     st.info("👆 Configure your settings in the sidebar and click 'Start Analysis' to begin!")
     col1, col2, col3 = st.columns(3)
