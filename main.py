@@ -140,19 +140,28 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         else:
             future_predictions = np.array(future_predictions, dtype=float).flatten()
         future_predictions = np.nan_to_num(future_predictions, nan=0.0, posinf=0.0, neginf=0.0)
+        # Step 5: Evaluate model
         status_text.text("📊 Evaluating performance...")
         progress_bar.progress(90)
         metrics = evaluate_model(model, scaler, X_test, y_test, feature_columns)
-        mae = metrics["mae"]
-        rmse = metrics["rmse"]
-        mape = metrics["mape"]
-        r2 = metrics["r2"]
-        test_predictions = metrics["test_pred_inverse"]
-        test_actual = metrics["test_actual_inverse"]
+        mae = metrics.get("mae", 0.0)
+        rmse = metrics.get("rmse", 0.0)
+        mape = metrics.get("mape", 0.0)
+        r2 = metrics.get("r2", 0.0)
+        test_predictions = np.array(metrics.get("test_pred_inverse", []))
+        test_actual = np.array(metrics.get("test_actual_inverse", []))
         progress_bar.progress(100)
         time.sleep(0.5)
         progress_container.empty()
         st.success("✅ Analysis completed successfully!")
+
+        # --- Fix: Ensure future_dates are pandas.Timestamp for plotting ---
+        if hasattr(future_dates[0], "to_pydatetime"):
+            future_dates = [pd.Timestamp(d) for d in future_dates]
+        else:
+            future_dates = pd.to_datetime(future_dates)
+
+        # --- Fix: Ensure metrics are visible and charts update correctly ---
         col1, col2 = st.columns([3, 1])
         with col1:
             fig = make_subplots(
@@ -197,18 +206,15 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
             )
             # Add prediction confidence interval
             last_price = stock_data['Close'].iloc[-1]
-            # Ensure test_actual and test_predictions are numpy arrays for subtraction
-            test_actual_arr = np.array(test_actual)
-            test_pred_arr = np.array(test_predictions)
-            if test_actual_arr.shape == test_pred_arr.shape and test_actual_arr.size > 0:
-                std_dev = np.std(test_actual_arr - test_pred_arr)
+            if test_actual.shape == test_predictions.shape and test_actual.size > 0:
+                std_dev = np.std(test_actual - test_predictions)
             else:
                 std_dev = np.std(future_predictions) if len(future_predictions) > 1 else 0.0
             upper_bound = future_predictions + 2 * std_dev
             lower_bound = future_predictions - 2 * std_dev
             fig.add_trace(
                 go.Scatter(
-                    x=future_dates + future_dates[::-1],
+                    x=list(future_dates) + list(future_dates)[::-1],
                     y=np.concatenate([upper_bound, lower_bound[::-1]]),
                     fill='toself',
                     fillcolor='rgba(255,0,0,0.1)',
@@ -312,18 +318,14 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         with st.expander("📉 Model Training Loss Curve"):
             st.line_chart(history.history['loss'], use_container_width=True)
         with st.expander("📈 Actual vs Predicted (Test Set)"):
-            st.line_chart({
-                "Actual": metrics["test_actual_inverse"],
-                "Predicted": metrics["test_pred_inverse"]
-            })
-    except Exception as e:
-        progress_container.empty()
-        st.error(f"❌ An error occurred: {str(e)}")
-        st.info("💡 **Troubleshooting tips:**\n"
-                "• Check if the ticker symbol is valid\n"
-                "• Ensure sufficient historical data is available\n"
-                "• Try a different date range\n"
-                "• Check your internet connection")
+            # Only plot if test_actual and test_predictions are valid
+            if test_actual.size > 0 and test_predictions.size > 0:
+                st.line_chart({
+                    "Actual": test_actual,
+                    "Predicted": test_predictions
+                })
+            else:
+                st.info("Not enough test data for actual vs predicted plot.")
 else:
     st.info("👆 Configure your settings in the sidebar and click 'Start Analysis' to begin!")
     col1, col2, col3 = st.columns(3)
