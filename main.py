@@ -95,13 +95,7 @@ time_steps = st.sidebar.selectbox(
 
 # Advanced settings
 st.sidebar.subheader("⚙️ Advanced Settings")
-n_trials = st.sidebar.slider(
-    "Optuna Trials", 
-    min_value=3, 
-    max_value=5, 
-    value=1,
-    help="Number of hyperparameter optimization trials (more = better but slower)"
-)
+# Removed n_trials slider as per the change request
 
 # Main interface
 st.markdown('<h1 class="main-header">🤖 AI Stock Price Predictor</h1>', unsafe_allow_html=True)
@@ -185,8 +179,8 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         status_text.text("🧠 Training AI model...")
         progress_bar.progress(60)
         
-        model, scaler, X_test, y_test, df_clean, feature_columns, history, best_params = train_lstm_model(
-            stock_data, time_steps=time_steps, n_trials=n_trials
+        model, scaler, X_test, y_test, df_clean, feature_columns, history = train_lstm_model(
+            stock_data, time_steps=time_steps
         )
         
         # Step 4: Make predictions
