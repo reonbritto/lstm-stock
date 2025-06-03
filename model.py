@@ -13,6 +13,8 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
+import xgboost as xgb
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 # Custom Attention Layer
 class Attention(Layer):
@@ -238,3 +240,56 @@ def evaluate_model(model, scaler, X_test, y_test, feature_columns):
         return metrics
     except Exception as e:
         raise Exception(f"Error evaluating model: {str(e)}")
+
+def extract_sentiment_from_texts(texts):
+    """
+    Placeholder for FinBERT/HuggingFace sentiment extraction.
+    Replace this with actual FinBERT inference or HuggingFace pipeline.
+    """
+    # Example: return np.random.uniform(-1, 1, len(texts))
+    # For real use: load FinBERT or use transformers pipeline for sentiment
+    return np.random.uniform(-1, 1, len(texts))
+
+def merge_price_and_sentiment(price_df, news_df):
+    """
+    Merge price/indicator features with sentiment features.
+    price_df: DataFrame with price and indicators (indexed by date)
+    news_df: DataFrame with columns ['date', 'headline']
+    Returns: merged DataFrame with sentiment score per day
+    """
+    # Extract sentiment for each news headline
+    news_df['sentiment'] = extract_sentiment_from_texts(news_df['headline'])
+    # Aggregate sentiment per day (mean)
+    daily_sentiment = news_df.groupby('date')['sentiment'].mean()
+    # Merge with price_df
+    merged = price_df.copy()
+    merged['date'] = merged.index.date
+    merged = merged.merge(daily_sentiment, left_on='date', right_index=True, how='left')
+    merged['sentiment'] = merged['sentiment'].fillna(0)
+    merged = merged.drop(columns=['date'])
+    return merged
+
+def train_xgboost_model(df, feature_columns, target_column='Close'):
+    """
+    Train an XGBoost regressor on tabular features.
+    Returns: trained model, feature importance
+    """
+    X = df[feature_columns].values
+    y = df[target_column].values
+    model = xgb.XGBRegressor(n_estimators=100, max_depth=5, learning_rate=0.05)
+    model.fit(X, y)
+    importance = model.feature_importances_
+    return model, importance
+
+# Hugging Face Transformers: Load DeepSeek model for text-based triggers or embeddings
+def load_deepseek_model():
+    """
+    Load the DeepSeek model and tokenizer from Hugging Face Hub.
+    Returns: tokenizer, model
+    """
+    tokenizer = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-0528", trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained("deepseek-ai/DeepSeek-R1-0528", trust_remote_code=True)
+    return tokenizer, model
+
+# Example usage (call this only once and reuse the model/tokenizer as needed):
+# tokenizer, model = load_deepseek_model()

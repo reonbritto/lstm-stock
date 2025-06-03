@@ -23,3 +23,6 @@ appdirs==1.4.4
 user-agent==0.1.10
 typing-extensions>=4.6.0
 optuna==3.6.1
+xgboost==1.7.6
+transformers==4.40.2
+torch>=2.0.0

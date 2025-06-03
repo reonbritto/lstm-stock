@@ -4,7 +4,10 @@ import pandas as pd
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
-from model import train_lstm_model, predict_future_prices, evaluate_model
+from model import (
+    train_lstm_model, predict_future_prices, evaluate_model,
+    load_deepseek_model, extract_sentiment_from_texts, merge_price_and_sentiment
+)
 import numpy as np
 import ssl
 import os
