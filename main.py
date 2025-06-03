@@ -156,10 +156,10 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         st.success("✅ Analysis completed successfully!")
 
         # --- Fix: Ensure future_dates are pandas.Timestamp for plotting ---
-        if hasattr(future_dates[0], "to_pydatetime"):
-            future_dates = [pd.Timestamp(d) for d in future_dates]
-        else:
-            future_dates = pd.to_datetime(future_dates)
+        future_dates = pd.to_datetime(future_dates)
+        # If future_dates is not unique, make it unique for plotting
+        if len(set(future_dates)) != len(future_dates):
+            future_dates = pd.date_range(start=future_dates[0], periods=len(future_dates), freq="B")
 
         # --- Fix: Ensure metrics are visible and charts update correctly ---
         col1, col2 = st.columns([3, 1])
@@ -210,8 +210,8 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 std_dev = np.std(test_actual - test_predictions)
             else:
                 std_dev = np.std(future_predictions) if len(future_predictions) > 1 else 0.0
-            upper_bound = future_predictions + 2 * std_dev
-            lower_bound = future_predictions - 2 * std_dev
+            upper_bound = np.array(future_predictions) + 2 * std_dev
+            lower_bound = np.array(future_predictions) - 2 * std_dev
             fig.add_trace(
                 go.Scatter(
                     x=list(future_dates) + list(future_dates)[::-1],
@@ -318,7 +318,6 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         with st.expander("📉 Model Training Loss Curve"):
             st.line_chart(history.history['loss'], use_container_width=True)
         with st.expander("📈 Actual vs Predicted (Test Set)"):
-            # Only plot if test_actual and test_predictions are valid
             if test_actual.size > 0 and test_predictions.size > 0:
                 st.line_chart({
                     "Actual": test_actual,
@@ -326,6 +325,17 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 })
             else:
                 st.info("Not enough test data for actual vs predicted plot.")
+    except Exception as e:
+        try:
+            progress_container.empty()
+        except Exception:
+            pass
+        st.error(f"❌ An error occurred: {str(e)}")
+        st.info("💡 **Troubleshooting tips:**\n"
+                "• Check if the ticker symbol is valid\n"
+                "• Ensure sufficient historical data is available\n"
+                "• Try a different date range\n"
+                "• Check your internet connection")
 else:
     st.info("👆 Configure your settings in the sidebar and click 'Start Analysis' to begin!")
     col1, col2, col3 = st.columns(3)
