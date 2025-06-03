@@ -15,6 +15,10 @@ try:
 except AttributeError:
     pass
 
+# Initialize session state for chart refresh
+if 'refresh_charts' not in st.session_state:
+    st.session_state.refresh_charts = False
+
 st.set_page_config(
     page_title="AI Stock Predictor",
     page_icon="📈",
@@ -86,6 +90,7 @@ if start_date >= end_date:
     st.error("❌ Start date must be before end date.")
     st.stop()
 
+@st.cache_data
 def fetch_stock_data(ticker, start, end, max_retries=3):
     for attempt in range(max_retries):
         try:
@@ -106,6 +111,8 @@ def fetch_stock_data(ticker, start, end, max_retries=3):
     raise ValueError(f"Failed to fetch data for {ticker} after {max_retries} attempts")
 
 if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=True):
+    # Reset charts on new analysis
+    st.session_state.refresh_charts = True
     progress_container = st.container()
     with progress_container:
         progress_bar = st.progress(0)
@@ -156,13 +163,18 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         progress_container.empty()
         st.success("✅ Analysis completed successfully!")
 
-        # Ensure future_dates are pandas.Timestamp
+        # Ensure future_dates are unique and pandas.Timestamp
         future_dates = pd.to_datetime(future_dates)
-        if len(set(future_dates)) != len(future_dates):
-            future_dates = pd.date_range(start=future_dates[0], periods=len(future_dates), freq="B")
+        if len(future_dates) != len(set(future_dates)) or len(future_dates) != len(future_predictions):
+            future_dates = pd.date_range(start=stock_data.index[-1] + timedelta(days=1), 
+                                        periods=len(future_predictions), freq="B")
+        
+        # Ensure test data alignment
+        test_dates = stock_data.index[-len(test_actual):] if test_actual.size > 0 else []
 
         col1, col2 = st.columns([3, 1])
         with col1:
+            # Main Plotly Chart
             fig = make_subplots(
                 rows=2, cols=1,
                 shared_xaxes=True,
@@ -192,34 +204,34 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                     ),
                     row=1, col=1
                 )
-            fig.add_trace(
-                go.Scatter(
-                    x=future_dates,
-                    y=future_predictions,
-                    mode='lines+markers',
-                    name='Predicted Price',
-                    line=dict(color='red', dash='dash', width=3),
-                    marker=dict(size=6)
-                ),
-                row=1, col=1
-            )
-            # Add prediction confidence interval
-            last_price = stock_data['Close'].iloc[-1]
-            std_dev = np.std(test_actual - test_predictions) if test_actual.size > 0 else np.std(future_predictions)
-            upper_bound = np.array(future_predictions) + 2 * std_dev
-            lower_bound = np.array(future_predictions) - 2 * std_dev
-            fig.add_trace(
-                go.Scatter(
-                    x=list(future_dates) + list(future_dates)[::-1],
-                    y=np.concatenate([upper_bound, lower_bound[::-1]]),
-                    fill='toself',
-                    fillcolor='rgba(255,0,0,0.1)',
-                    line=dict(color='rgba(255,255,255,0)'),
-                    name='Confidence Interval',
-                    showlegend=True
-                ),
-                row=1, col=1
-            )
+            if len(future_dates) == len(future_predictions):
+                fig.add_trace(
+                    go.Scatter(
+                        x=future_dates,
+                        y=future_predictions,
+                        mode='lines+markers',
+                        name='Predicted Price',
+                        line=dict(color='red', dash='dash', width=3),
+                        marker=dict(size=6)
+                    ),
+                    row=1, col=1
+                )
+                # Add prediction confidence interval
+                std_dev = np.std(test_actual - test_predictions) if test_actual.size > 0 else np.std(future_predictions)
+                upper_bound = np.array(future_predictions) + 2 * std_dev
+                lower_bound = np.array(future_predictions) - 2 * std_dev
+                fig.add_trace(
+                    go.Scatter(
+                        x=list(future_dates) + list(future_dates)[::-1],
+                        y=np.concatenate([upper_bound, lower_bound[::-1]]),
+                        fill='toself',
+                        fillcolor='rgba(255,0,0,0.1)',
+                        line=dict(color='rgba(255,255,255,0)'),
+                        name='Confidence Interval',
+                        showlegend=True
+                    ),
+                    row=1, col=1
+                )
             fig.add_trace(
                 go.Bar(
                     x=stock_data.index,
@@ -241,7 +253,8 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 template="plotly_white"
             )
             fig.update_xaxes(rangeslider_visible=True, row=1, col=1)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"main_chart_{st.session_state.refresh_charts}")
+        
         with col2:
             st.subheader("📈 Model Performance")
             st.table({
@@ -275,6 +288,7 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 st.warning("🟠 **SELL**\nModel predicts moderate downward movement")
             else:
                 st.error("🔴 **STRONG SELL**\nModel predicts significant downward movement")
+        
         with st.expander("📋 Data Summary"):
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -292,6 +306,7 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 st.write(f"• Lookback period: {time_steps} days")
                 st.write(f"• Prediction horizon: {prediction_days} days")
                 st.write(f"• Training epochs: {len(history.history['loss'])}")
+        
         with st.expander("📊 Recent Data"):
             recent_data = stock_data.tail(10)[['Open', 'High', 'Low', 'Close', 'Volume']]
             st.dataframe(recent_data.style.format({
@@ -301,6 +316,7 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 'Close': '${:.2f}',
                 'Volume': '{:,.0f}'
             }))
+        
         pred_df = pd.DataFrame({
             "Date": future_dates,
             "Predicted_Close": future_predictions
@@ -311,17 +327,24 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
             file_name=f"{ticker_input}_predictions.csv",
             mime="text/csv"
         )
+        
         with st.expander("📉 Model Training Loss Curve"):
-            st.line_chart(history.history['loss'], use_container_width=True)
+            if 'loss' in history.history:
+                st.line_chart(pd.Series(history.history['loss'], name="Training Loss"), 
+                             use_container_width=True, 
+                             key=f"loss_chart_{st.session_state.refresh_charts}")
+            else:
+                st.info("No training loss data available.")
+        
         with st.expander("📈 Actual vs Predicted (Test Set)"):
-            if test_actual.size > 0 and test_predictions.size > 0:
-                test_dates = stock_data.index[-len(test_actual):]
+            if test_actual.size > 0 and test_predictions.size > 0 and len(test_dates) == len(test_actual):
                 st.line_chart({
-                    "Actual": pd.Series(test_actual, index=test_dates),
-                    "Predicted": pd.Series(test_predictions, index=test_dates)
-                })
+                    "Actual": pd.Series(test_actual, index=test_dates, name="Actual"),
+                    "Predicted": pd.Series(test_predictions, index=test_dates, name="Predicted")
+                }, use_container_width=True, key=f"test_chart_{st.session_state.refresh_charts}")
             else:
                 st.info("Not enough test data for actual vs predicted plot.")
+    
     except Exception as e:
         progress_container.empty()
         st.error(f"❌ An error occurred: {str(e)}")
@@ -330,7 +353,9 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 "• Ensure sufficient historical data is available\n"
                 "• Try a different date range\n"
                 "• Check your internet connection")
-        st.button("🔄 Retry Analysis", type="secondary", key="retry")
+        if st.button("🔄 Retry Analysis", type="secondary", key="retry"):
+            st.session_state.refresh_charts = True
+            st.experimental_rerun()
 else:
     st.info("👆 Configure your settings in the sidebar and click 'Start Analysis' to begin!")
     col1, col2, col3 = st.columns(3)
