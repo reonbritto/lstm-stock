@@ -195,8 +195,15 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 ),
                 row=1, col=1
             )
+            # Add prediction confidence interval
             last_price = stock_data['Close'].iloc[-1]
-            std_dev = np.std(test_actual - test_predictions)
+            # Ensure test_actual and test_predictions are numpy arrays for subtraction
+            test_actual_arr = np.array(test_actual)
+            test_pred_arr = np.array(test_predictions)
+            if test_actual_arr.shape == test_pred_arr.shape and test_actual_arr.size > 0:
+                std_dev = np.std(test_actual_arr - test_pred_arr)
+            else:
+                std_dev = np.std(future_predictions) if len(future_predictions) > 1 else 0.0
             upper_bound = future_predictions + 2 * std_dev
             lower_bound = future_predictions - 2 * std_dev
             fig.add_trace(
