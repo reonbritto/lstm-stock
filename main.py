@@ -381,10 +381,7 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 st.write(f"• Training epochs: {len(history.history['loss'])}")
                 
         # Hyperparameter optimization results
-        with st.expander("🔧 Hyperparameter Optimization"):
-            st.write("**Best Parameters Found:**")
-            for param, value in best_params.items():
-                st.write(f"• {param}: {value}")
+        # (Optuna/best_params removed, so skip this section)
         
         # Recent data table
         with st.expander("📊 Recent Data"):
@@ -461,10 +458,3 @@ else:
         """)
 
 # Footer
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #666; font-size: 0.9rem;">
-    <p>⚠️ <strong>Disclaimer:</strong> This tool is for educational purposes only. 
-    Past performance does not guarantee future results. Always consult with financial advisors before making investment decisions.</p>
-</div>
-""", unsafe_allow_html=True)
