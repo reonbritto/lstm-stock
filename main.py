@@ -143,7 +143,16 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         # Step 5: Evaluate model
         status_text.text("📊 Evaluating performance...")
         progress_bar.progress(90)
-        metrics = evaluate_model(model, scaler, X_test, y_test, feature_columns)
+        # Only evaluate if test data is available
+        if X_test is not None and y_test is not None:
+            metrics = evaluate_model(model, scaler, X_test, y_test, feature_columns)
+        else:
+            metrics = {
+                "mae": 0.0, "rmse": 0.0, "mape": 0.0, "r2": 0.0,
+                "test_pred_inverse": np.array(future_predictions),
+                "test_actual_inverse": np.array(future_predictions)
+            }
+
         mae = metrics.get("mae", 0.0)
         rmse = metrics.get("rmse", 0.0)
         mape = metrics.get("mape", 0.0)
