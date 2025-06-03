@@ -253,7 +253,7 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 template="plotly_white"
             )
             fig.update_xaxes(rangeslider_visible=True, row=1, col=1)
-            st.plotly_chart(fig, use_container_width=True, key=f"main_chart_{st.session_state.refresh_charts}")
+            st.plotly_chart(fig, use_container_width=True)
         
         with col2:
             st.subheader("📈 Model Performance")
@@ -331,8 +331,7 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         with st.expander("📉 Model Training Loss Curve"):
             if 'loss' in history.history:
                 st.line_chart(pd.Series(history.history['loss'], name="Training Loss"), 
-                             use_container_width=True, 
-                             key=f"loss_chart_{st.session_state.refresh_charts}")
+                             use_container_width=True)
             else:
                 st.info("No training loss data available.")
         
@@ -341,7 +340,7 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
                 st.line_chart({
                     "Actual": pd.Series(test_actual, index=test_dates, name="Actual"),
                     "Predicted": pd.Series(test_predictions, index=test_dates, name="Predicted")
-                }, use_container_width=True, key=f"test_chart_{st.session_state.refresh_charts}")
+                }, use_container_width=True)
             else:
                 st.info("Not enough test data for actual vs predicted plot.")
     
