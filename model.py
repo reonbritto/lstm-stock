@@ -14,7 +14,6 @@ from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 import xgboost as xgb
-from transformers import AutoTokenizer, AutoModelForCausalLM
 
 # Custom Attention Layer
 class Attention(Layer):
@@ -287,9 +286,14 @@ def load_deepseek_model():
     Load the DeepSeek model and tokenizer from Hugging Face Hub.
     Returns: tokenizer, model
     """
-    tokenizer = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-0528", trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained("deepseek-ai/DeepSeek-R1-0528", trust_remote_code=True)
-    return tokenizer, model
+    try:
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+        tokenizer = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-0528", trust_remote_code=True)
+        model = AutoModelForCausalLM.from_pretrained("deepseek-ai/DeepSeek-R1-0528", trust_remote_code=True)
+        return tokenizer, model
+    except ImportError as e:
+        raise ImportError("transformers and torch must be installed to use DeepSeek model. "
+                          "Install with: pip install transformers torch") from e
 
 # Example usage (call this only once and reuse the model/tokenizer as needed):
 # tokenizer, model = load_deepseek_model()
