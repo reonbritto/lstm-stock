@@ -11,7 +11,6 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from datetime import datetime, timedelta
-import optuna
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -85,14 +84,10 @@ def prepare_data(data, time_steps=60):
     df_clean = df[mask]
     return features, df_clean, feature_columns
 
-def build_lstm_model(trial, time_steps, n_features):
-    # Hyperparams
-    u1 = trial.suggest_int('lstm_units_1', 128, 512, step=64)
-    u2 = trial.suggest_int('lstm_units_2', 64, 256, step=32)
-    u3 = trial.suggest_int('lstm_units_3', 32, 128, step=16)
-    d1 = trial.suggest_float('dropout_rate_1', 0.2, 0.5, step=0.1)
-    d2 = trial.suggest_float('dropout_rate_2', 0.1, 0.4, step=0.1)
-    d3 = trial.suggest_float('dropout_rate_3', 0.1, 0.3, step=0.1)
+def build_lstm_model(time_steps, n_features):
+    # Fixed hyperparameters
+    u1, u2, u3 = 256, 128, 64
+    d1, d2, d3 = 0.3, 0.2, 0.1
 
     inputs = Input(shape=(time_steps, n_features))
     x = Conv1D(64, 3, activation='relu', padding='causal')(inputs)
@@ -113,7 +108,7 @@ def build_lstm_model(trial, time_steps, n_features):
     x = BatchNormalization()(attn)
     x = Dropout(d3)(x)
 
-    # pool over time to get a vector
+    # Pool over time to get a vector
     x = GlobalAveragePooling1D()(x)
     x = Dense(64, activation='relu')(x)
     outputs = Dense(1)(x)
@@ -122,12 +117,12 @@ def build_lstm_model(trial, time_steps, n_features):
     model.compile(
         optimizer='adam',
         loss='mse',
-        metrics=['mae','mape'],
+        metrics=['mae', 'mape'],
         run_eagerly=False
     )
     return model
 
-def train_lstm_model(data, time_steps=60, n_trials=20):
+def train_lstm_model(data, time_steps=60):
     try:
         if '20_MA' not in data.columns:
             data = data.copy()
@@ -146,40 +141,19 @@ def train_lstm_model(data, time_steps=60, n_trials=20):
         X_train, X_test = X[:train_size], X[train_size:]
         y_train, y_test = y[:train_size], y[train_size:]
 
-        # Optuna objective function
-        def objective(trial):
-            model = build_lstm_model(trial, time_steps, len(feature_columns))
-            batch_size = trial.suggest_categorical('batch_size', [16, 32, 64])
-            early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-            reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.00005)
-            history = model.fit(
-                X_train, y_train,
-                epochs=50,  # Reduced for faster optimization
-                batch_size=batch_size,
-                validation_data=(X_test, y_test),
-                callbacks=[early_stopping, reduce_lr],
-                verbose=0
-            )
-            return min(history.history['val_loss'])
-
-        # Run Optuna optimization
-        study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=n_trials)
-        
-        # Train final model with best hyperparameters
-        best_params = study.best_params
-        model = build_lstm_model(optuna.trial.FixedTrial(best_params), time_steps, len(feature_columns))
+        # Train the model
+        model = build_lstm_model(time_steps, len(feature_columns))
         early_stopping = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=7, min_lr=0.00005)
         history = model.fit(
             X_train, y_train,
             epochs=150,
-            batch_size=best_params['batch_size'],
+            batch_size=32,
             validation_data=(X_test, y_test),
             callbacks=[early_stopping, reduce_lr],
             verbose=0
         )
-        return model, scaler, X_test, y_test, df_clean, feature_columns, history, best_params
+        return model, scaler, X_test, y_test, df_clean, feature_columns, history
     except Exception as e:
         raise Exception(f"Error training model: {str(e)}")
 
