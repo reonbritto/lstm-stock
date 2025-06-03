@@ -144,22 +144,12 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         status_text.text("📊 Evaluating performance...")
         progress_bar.progress(90)
         metrics = evaluate_model(model, scaler, X_test, y_test, feature_columns)
-        # --- Fix: If metrics are all zero, compute them here using predictions and actuals ---
+        mae = metrics.get("mae", 0.0)
+        rmse = metrics.get("rmse", 0.0)
+        mape = metrics.get("mape", 0.0)
+        r2 = metrics.get("r2", 0.0)
         test_predictions = np.array(metrics.get("test_pred_inverse", []))
         test_actual = np.array(metrics.get("test_actual_inverse", []))
-        if test_actual.size > 0 and test_predictions.size > 0:
-            mae = float(np.mean(np.abs(test_actual - test_predictions)))
-            rmse = float(np.sqrt(np.mean((test_actual - test_predictions) ** 2)))
-            mape = float(np.mean(np.abs((test_actual - test_predictions) / (test_actual + 1e-8))) * 100)
-            # R2 calculation
-            ss_res = np.sum((test_actual - test_predictions) ** 2)
-            ss_tot = np.sum((test_actual - np.mean(test_actual)) ** 2)
-            r2 = float(1 - ss_res / ss_tot) if ss_tot != 0 else 0.0
-        else:
-            mae = metrics.get("mae", 0.0)
-            rmse = metrics.get("rmse", 0.0)
-            mape = metrics.get("mape", 0.0)
-            r2 = metrics.get("r2", 0.0)
         progress_bar.progress(100)
         time.sleep(0.5)
         progress_container.empty()

@@ -4,7 +4,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import RobustScaler
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from datetime import timedelta
 
 def prepare_data_simple(df, time_steps=60):
@@ -116,13 +116,30 @@ def predict_future_prices(model, scaler, df, feature_columns, days=30, time_step
     return np.array(preds), future_dates
 
 def evaluate_model(model, scaler, X_test, y_test, feature_columns):
-    # Dummy evaluation for compatibility
-    # In this simple version, evaluation is handled in train_and_evaluate
-    return {
-        "mae": 0.0,
-        "rmse": 0.0,
-        "mape": 0.0,
-        "r2": 0.0,
-        "test_pred_inverse": [],
-        "test_actual_inverse": []
-    }
+    """Evaluate model performance and return metrics as a dict"""
+    try:
+        # Predict and inverse-transform only the target (first) feature
+        test_pred_scaled = model.predict(X_test, verbose=0).flatten()
+        n = min(len(test_pred_scaled), len(y_test))
+        test_pred_scaled = test_pred_scaled[-n:]
+        actual_scaled = y_test[-n:]
+        center = scaler.center_[0]
+        scale = scaler.scale_[0]
+        test_pred_inverse = test_pred_scaled * scale + center
+        test_actual_inverse = actual_scaled * scale + center
+
+        mae = float(mean_absolute_error(test_actual_inverse, test_pred_inverse))
+        rmse = float(np.sqrt(mean_squared_error(test_actual_inverse, test_pred_inverse)))
+        mape = float(np.mean(np.abs((test_actual_inverse - test_pred_inverse) / test_actual_inverse)) * 100)
+        r2 = float(r2_score(test_actual_inverse, test_pred_inverse))
+        metrics = {
+            "mae": mae,
+            "rmse": rmse,
+            "mape": mape,
+            "r2": r2,
+            "test_pred_inverse": test_pred_inverse,
+            "test_actual_inverse": test_actual_inverse
+        }
+        return metrics
+    except Exception as e:
+        raise Exception(f"Error evaluating model: {str(e)}")
