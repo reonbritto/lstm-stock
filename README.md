@@ -13,6 +13,9 @@ This project is an interactive web application for stock price prediction using 
 - **Performance Metrics:** MAE, RMSE, MAPE, R².
 - **Downloadable Results:** Export predictions as CSV.
 - **Extensible:** Ready for integration with Hugging Face Transformers for advanced text-based triggers.
+- **Simplified LSTM Pipeline:** Quick-to-train model using key indicators.
+- **Advanced Technical Indicators:** EMA-50, EMA-200, MACD, Bollinger Bands, Stochastic Oscillator, Volume Change.
+- **Improved Data Prep:** RobustScaler normalization, business-day future date generation.
 
 ## Project Structure
 
@@ -38,6 +41,7 @@ This project is an interactive web application for stock price prediction using 
 1. **Install dependencies:**
     ```bash
     pip install -r requirements.txt
+    # (ensure tensorflow and sklearn versions compatible)
     ```
 
 2. **Run the app:**
@@ -54,6 +58,8 @@ This project is an interactive web application for stock price prediction using 
 
 - The sentiment and transformer features are placeholders; integrate real models as needed.
 - The app is for educational and research purposes only.
+- You can switch between the full-featured model and the simplified pipeline by importing `train_and_evaluate` etc.
+- Adjust `time_steps`, epochs, and batch size for your data and compute.
 
 ## Requirements
 
@@ -114,3 +120,17 @@ Improving the prediction accuracy of financial models is an ongoing process. Her
 -   **Stateful LSTMs:** If there's a need to maintain state across batches for very long sequences.
 
 Implementing these strategies requires careful experimentation and validation to ensure genuine performance improvements.
+
+## Simplified Model & Indicators
+We offer a lightweight variant optimized for faster iteration:
+1. **prepare_data_simple**  
+   - Computes: Close, Return, Volatility, MA_20, EMA_20, EMA_50, EMA_200, MACD & signal, Bollinger Bands, Stochastic K/D, Volume Change.  
+   - Scales with `RobustScaler` and builds sliding windows.
+
+2. **build_simple_lstm_model**  
+   - Two LSTM layers (128→64 units) + Dropout  
+   - Dense head for single-step forecasting
+
+3. **train_and_evaluate**  
+   - 80/20 train/test split  
+   - Early stopping, reporting RMSE, MAE, MAPE, R²

@@ -7,37 +7,45 @@ import pandas as pd
 from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from datetime import timedelta
+import pandas_ta as ta
 
-def prepare_data_simple(df, time_steps=60):
+def calculate_features(df):
     df = df.copy()
     df['Return'] = df['Close'].pct_change()
     df['Volatility'] = df['Close'].rolling(window=10).std()
     df['MA_20'] = df['Close'].rolling(window=20).mean()
     df['EMA_20'] = df['Close'].ewm(span=20).mean()
+    macd = ta.macd(df['Close'], fast=12, slow=26, signal=9)
+    df['MACD'] = macd['MACD_12_26_9']
+    df['MACDs'] = macd['MACDs_12_26_9']
+    df['RSI'] = ta.rsi(df['Close'], length=14)
     df = df.fillna(method='ffill').fillna(method='bfill')
+    return df
 
-    features = df[['Close', 'Return', 'Volatility', 'MA_20', 'EMA_20']].values
+def prepare_data_simple(df, time_steps=60):
+    df_features = calculate_features(df)
+    features_list = ['Close', 'Return', 'Volatility', 'MA_20', 'EMA_20', 'MACD', 'MACDs', 'RSI']
+    features_data = df_features[features_list].values
     scaler = RobustScaler()
-    scaled = scaler.fit_transform(features)
-
+    scaled = scaler.fit_transform(features_data)
+    
     X, y = [], []
     for i in range(time_steps, len(scaled)):
         X.append(scaled[i - time_steps:i])
-        y.append(scaled[i, 0])  # Predict 'Close'
-
-    return np.array(X), np.array(y), scaler
+        y.append(scaled[i, 0])
+    return np.array(X), np.array(y), scaler, features_list
 
 def build_simple_lstm_model(input_shape):
     model = Sequential()
     model.add(LSTM(64, input_shape=input_shape, return_sequences=False))
     model.add(Dropout(0.2))
     model.add(Dense(32, activation='relu'))
-    model.add(Dense(1))  # Predict single value (next Close)
+    model.add(Dense(1))
     model.compile(optimizer='adam', loss='mse')
     return model
 
 def train_and_evaluate(df, time_steps=60):
-    X, y, scaler = prepare_data_simple(df, time_steps)
+    X, y, scaler, features_list = prepare_data_simple(df, time_steps)
     split = int(0.8 * len(X))
     X_train, X_test = X[:split], X[split:]
     y_train, y_test = y[:split], y[split:]
@@ -51,7 +59,6 @@ def train_and_evaluate(df, time_steps=60):
     preds = model.predict(X_test, verbose=0)
     actual = y_test
 
-    # Inverse transform
     center = scaler.center_[0]
     scale = scaler.scale_[0]
     preds_rescaled = preds.flatten() * scale + center
@@ -59,56 +66,49 @@ def train_and_evaluate(df, time_steps=60):
 
     rmse = np.sqrt(mean_squared_error(actual_rescaled, preds_rescaled))
     print(f"Test RMSE: {rmse:.4f}")
-    return model, scaler, preds_rescaled, actual_rescaled, history
+    return model, scaler, preds_rescaled, actual_rescaled, history, X_test, y_test, features_list
 
 def predict_next_days(df, model, scaler, days=10, time_steps=60):
     df = df.copy()
-    df['Return'] = df['Close'].pct_change()
-    df['Volatility'] = df['Close'].rolling(window=10).std()
-    df['MA_20'] = df['Close'].rolling(window=20).mean()
-    df['EMA_20'] = df['Close'].ewm(span=20).mean()
-    df = df.fillna(method='ffill').fillna(method='bfill')
-
-    features = df[['Close', 'Return', 'Volatility', 'MA_20', 'EMA_20']].values
-    scaled = scaler.transform(features)
-    sequence = scaled[-time_steps:].copy()
-
+    features_list = ['Close', 'Return', 'Volatility', 'MA_20', 'EMA_20', 'MACD', 'MACDs', 'RSI']
+    
+    df_features = calculate_features(df)
+    features_data = df_features[features_list].values
+    scaled_features = scaler.transform(features_data)
+    if len(scaled_features) < time_steps:
+        raise ValueError("Not enough data for prediction")
+    sequence = scaled_features[-time_steps:].copy()
+    
     future_preds = []
     for _ in range(days):
         input_seq = sequence.reshape(1, time_steps, -1)
         pred_scaled = model.predict(input_seq, verbose=0)[0][0]
-        pred = pred_scaled * scaler.scale_[0] + scaler.center_[0]
+        
+        center = scaler.center_[0]
+        scale = scaler.scale_[0]
+        pred = pred_scaled * scale + center
         future_preds.append(pred)
-
-        # Create next row with realistic feature estimates
-        next_row = sequence[-1].copy()
-        next_row[0] = pred_scaled
-        next_row[1] = sequence[-10:, 1].mean()  # Recent average return
-        next_row[2] = sequence[-10:, 2].mean()  # Recent average volatility
-        next_row[3] = np.mean(sequence[-20:, 0])  # Update MA_20
-        next_row[4] = np.mean(sequence[-20:, 0])  # Update EMA_20 approximation
-        sequence = np.vstack([sequence[1:], next_row])
-
+        
+        last_date = df.index[-1]
+        future_date = last_date + pd.Timedelta(days=1)
+        new_row = pd.Series(data={'Close': pred}, name=future_date)
+        df = pd.concat([df, new_row.to_frame().T])
+        
+        df_features = calculate_features(df)
+        last_features = df_features[features_list].iloc[-1:].values
+        last_scaled = scaler.transform(last_features)
+        sequence = np.vstack([sequence[1:], last_scaled])
+    
     return future_preds
-
-def train_lstm_model(df, time_steps=60):
-    model, scaler, preds_rescaled, actual_rescaled, history = train_and_evaluate(df, time_steps)
-    X, y, _ = prepare_data_simple(df, time_steps)
-    split = int(0.8 * len(X))
-    X_test, y_test = X[split:], y[split:]
-    df_clean = df
-    feature_columns = ['Close', 'Return', 'Volatility', 'MA_20', 'EMA_20']
-    return model, scaler, X_test, y_test, df_clean, feature_columns, history
 
 def predict_future_prices(model, scaler, df, feature_columns, days=30, time_steps=60):
     preds = predict_next_days(df, model, scaler, days=days, time_steps=time_steps)
-    # Generate future dates (business days only)
     last_date = df.index[-1]
     future_dates = []
     current_date = last_date
     for _ in range(days):
         current_date += timedelta(days=1)
-        while current_date.weekday() >= 5:  # Skip weekends
+        while current_date.weekday() >= 5:
             current_date += timedelta(days=1)
         future_dates.append(current_date)
     return np.array(preds), future_dates
@@ -140,3 +140,8 @@ def evaluate_model(model, scaler, X_test, y_test, feature_columns):
         return metrics
     except Exception as e:
         raise Exception(f"Error evaluating model: {str(e)}")
+
+def train_lstm_model(df, time_steps=60):
+    model, scaler, preds_rescaled, actual_rescaled, history, X_test, y_test, feature_columns = train_and_evaluate(df, time_steps)
+    df_clean = df
+    return model, scaler, X_test, y_test, df_clean, feature_columns, history
