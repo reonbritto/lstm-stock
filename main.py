@@ -8,6 +8,7 @@ from model import train_lstm_model, predict_future_prices, evaluate_model
 import numpy as np
 import ssl
 import time
+import os
 
 # SSL configuration
 try:
@@ -74,6 +75,9 @@ time_steps = st.sidebar.selectbox(
     index=1
 )
 
+# Add this option
+use_saved_model = st.sidebar.checkbox("Use saved model (for consistent predictions)", value=False)
+
 st.markdown('<h1 class="main-header">🤖 AI Stock Price Predictor</h1>', unsafe_allow_html=True)
 st.markdown("""
 <div style="text-align: center; margin-bottom: 2rem;">
@@ -121,6 +125,7 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
         status_text.text("📥 Fetching stock data...")
         progress_bar.progress(20)
         stock_data = fetch_stock_data(ticker_input, start_date, end_date)
+        
         if stock_data is None or stock_data.empty:
             progress_container.empty()
             st.error(
@@ -138,9 +143,25 @@ if st.sidebar.button("🚀 Start Analysis", type="primary", use_container_width=
             st.stop()
         status_text.text("🧠 Training AI model...")
         progress_bar.progress(60)
-        model, scaler, X_test, y_test, df_clean, feature_columns, history = train_lstm_model(
-            stock_data, time_steps=time_steps
-        )
+        
+        if use_saved_model and os.path.exists("./saved_model/lstm_model"):
+            # Load saved model if available and requested
+            model, scaler, feature_columns = load_trained_model()
+            # Create dummy values for other return values
+            X_test, y_test = None, None
+            df_clean = stock_data
+            # Dummy history for compatibility
+            class History:
+                def __init__(self):
+                    self.history = {'loss': [0]}
+            history = History()
+            status_text.text("Using pre-trained model...")
+        else:
+            # Train new model
+            model, scaler, X_test, y_test, df_clean, feature_columns, history = train_lstm_model(
+                stock_data, time_steps=time_steps
+            )
+        
         status_text.text("🔮 Generating predictions...")
         progress_bar.progress(80)
         future_predictions, future_dates = predict_future_prices(

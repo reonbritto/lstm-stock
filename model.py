@@ -4,10 +4,30 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import RobustScaler
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from datetime import timedelta
+import tensorflow as tf
+import random
+import os
+
 import pandas_ta as ta
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.preprocessing import RobustScaler
+from datetime import timedelta
+
+def set_seeds(seed=42):
+    """Set seeds for reproducibility"""
+    np.random.seed(seed)
+    random.seed(seed)
+    tf.random.set_seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ['TF_DETERMINISTIC_OPS'] = '1'
+    # Force TensorFlow to use single thread
+    # Multiple threads are a source of non-reproducible results
+    session_conf = tf.compat.v1.ConfigProto(
+        intra_op_parallelism_threads=1,
+        inter_op_parallelism_threads=1
+    )
+    sess = tf.compat.v1.Session(config=session_conf)
+    tf.compat.v1.keras.backend.set_session(sess)
 
 def calculate_features(df):
     df = df.copy()
@@ -141,7 +161,37 @@ def evaluate_model(model, scaler, X_test, y_test, feature_columns):
     except Exception as e:
         raise Exception(f"Error evaluating model: {str(e)}")
 
+def save_trained_model(model, scaler, feature_columns, path="./saved_model"):
+    """Save the trained model and its metadata"""
+    if not os.path.exists(path):
+        os.makedirs(path)
+    model.save(f"{path}/lstm_model")
+    np.save(f"{path}/scaler_center.npy", scaler.center_)
+    np.save(f"{path}/scaler_scale.npy", scaler.scale_)
+    with open(f"{path}/feature_columns.txt", "w") as f:
+        f.write(",".join(feature_columns))
+    print(f"Model saved to {path}")
+
+def load_trained_model(path="./saved_model"):
+    """Load the trained model and its metadata"""
+    from sklearn.preprocessing import RobustScaler
+    from tensorflow.keras.models import load_model
+    
+    model = load_model(f"{path}/lstm_model")
+    scaler = RobustScaler()
+    # We need to set these attributes manually
+    scaler.center_ = np.load(f"{path}/scaler_center.npy")
+    scaler.scale_ = np.load(f"{path}/scaler_scale.npy")
+    with open(f"{path}/feature_columns.txt", "r") as f:
+        feature_columns = f.read().split(",")
+    return model, scaler, feature_columns
+
 def train_lstm_model(df, time_steps=60):
+    # Set seeds for reproducibility
+    set_seeds(42)
+    
     model, scaler, preds_rescaled, actual_rescaled, history, X_test, y_test, feature_columns = train_and_evaluate(df, time_steps)
     df_clean = df
+    # After training, save the model
+    save_trained_model(model, scaler, feature_columns)
     return model, scaler, X_test, y_test, df_clean, feature_columns, history
