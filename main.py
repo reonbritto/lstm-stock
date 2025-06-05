@@ -38,15 +38,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Cached data fetchers
-@st.cache_data(ttl=3600)
-def fetch_stock_info(ticker):
-    return yf.Ticker(ticker).info
-
-@st.cache_data(ttl=3600)
-def fetch_stock_history(ticker, period="1y"):
-    return yf.Ticker(ticker).history(period=period)
-
 # Navigation
 nav = st.sidebar.radio("🔀 Navigation", ["Stock Prediction", "Stock Lookup"])
 
@@ -402,74 +393,237 @@ if nav == "Stock Prediction":
             """)
 
 elif nav == "Stock Lookup":
-    st.header("🔍 Stock Information Lookup")
+    st.markdown('<h1 class="main-header">🔍 Stock Information Center</h1>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <p style="font-size: 1.2rem; color: #666;">
+            Get comprehensive information about any stock
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Sidebar input
-    lookup_ticker = st.sidebar.text_input(
-        "🔍 Lookup Stock", "AAPL"
-    ).upper().strip()
-    if st.sidebar.button("Get Info"):
-        if not lookup_ticker:
-            st.warning("Please enter a ticker symbol.")
+    # Enhanced lookup form with better styling
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        lookup_ticker = st.text_input(
+            "🔍 Enter Stock Ticker Symbol",
+            value="AAPL",
+            key="lookup_ticker",
+            placeholder="e.g., AAPL, GOOGL, TSLA",
+            help="Enter a valid stock ticker symbol"
+        ).upper().strip()
+        
+        lookup_button = st.button("📊 Get Stock Information", type="primary", use_container_width=True)
+    if lookup_button:
+        if lookup_ticker:
+            with st.spinner(f"Fetching information for {lookup_ticker}..."):
+                try:
+                    # Fetch stock info
+                    stock = yf.Ticker(lookup_ticker)
+                    info = stock.info
+                    
+                    # Validate if we got valid data
+                    if not info or info.get('symbol') != lookup_ticker:
+                        st.error(f"❌ Could not find valid data for '{lookup_ticker}'. Please check the ticker symbol.")
+                        st.stop()
+                    
+                    st.success(f"✅ Successfully loaded data for {info.get('longName', lookup_ticker)}")
+                    
+                    # Display basic information
+                    st.subheader("📊 Key Metrics")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        current_price = info.get('currentPrice') or info.get('regularMarketPrice')
+                        previous_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
+                        market_cap = info.get('marketCap')
+                        
+                        if current_price:
+                            price_change = current_price - previous_close if previous_close else 0
+                            price_change_pct = (price_change / previous_close * 100) if previous_close else 0
+                            st.metric("Current Price", f"${current_price:.2f}", 
+                                     delta=f"{price_change_pct:+.2f}%" if price_change_pct else None)
+                        else:
+                            st.metric("Current Price", "N/A")
+                            
+                        st.metric("Previous Close", f"${previous_close:.2f}" if previous_close else "N/A")
+                        st.metric("Market Cap", f"${market_cap:,.0f}" if market_cap else "N/A")
+                    
+                    with col2:
+                        week_high = info.get('fiftyTwoWeekHigh')
+                        week_low = info.get('fiftyTwoWeekLow')
+                        volume = info.get('volume') or info.get('regularMarketVolume')
+                        
+                        st.metric("52 Week High", f"${week_high:.2f}" if week_high else "N/A")
+                        st.metric("52 Week Low", f"${week_low:.2f}" if week_low else "N/A")
+                        st.metric("Volume", f"{volume:,}" if volume else "N/A")
+                    
+                    with col3:
+                        pe_ratio = info.get('trailingPE')
+                        dividend_yield = info.get('dividendYield')
+                        beta = info.get('beta')
+                        
+                        st.metric("P/E Ratio", f"{pe_ratio:.2f}" if pe_ratio else "N/A")
+                        st.metric("Dividend Yield", f"{dividend_yield*100:.2f}%" if dividend_yield else "N/A")
+                        st.metric("Beta", f"{beta:.2f}" if beta else "N/A")
+                
+                    # Company Information
+                    with st.expander("📋 Company Information", expanded=True):
+                        st.write(f"**Company Name:** {info.get('longName', 'N/A')}")
+                        st.write(f"**Sector:** {info.get('sector', 'N/A')}")
+                        st.write(f"**Industry:** {info.get('industry', 'N/A')}")
+                        st.write(f"**Country:** {info.get('country', 'N/A')}")
+                        website = info.get('website')
+                        if website:
+                            st.write(f"**Website:** [{website}]({website})")
+                        else:
+                            st.write("**Website:** N/A")
+                        
+                        summary = info.get('longBusinessSummary')
+                        if summary:
+                            st.write(f"**Description:** {summary[:500]}..." if len(summary) > 500 else f"**Description:** {summary}")
+                        else:
+                            st.write("**Description:** N/A")
+                
+                    # Financial Metrics
+                    with st.expander("💰 Financial Metrics"):
+                        fin_col1, fin_col2 = st.columns(2)
+                        
+                        with fin_col1:
+                            st.write("**Valuation Metrics:**")
+                            market_cap = info.get('marketCap')
+                            enterprise_value = info.get('enterpriseValue')
+                            price_to_book = info.get('priceToBook')
+                            price_to_sales = info.get('priceToSalesTrailing12Months')
+                            
+                            st.write(f"• Market Cap: ${market_cap:,.0f}" if market_cap else "• Market Cap: N/A")
+                            st.write(f"• Enterprise Value: ${enterprise_value:,.0f}" if enterprise_value else "• Enterprise Value: N/A")
+                            st.write(f"• Price to Book: {price_to_book:.2f}" if price_to_book else "• Price to Book: N/A")
+                            st.write(f"• Price to Sales: {price_to_sales:.2f}" if price_to_sales else "• Price to Sales: N/A")
+                        
+                        with fin_col2:
+                            st.write("**Profitability:**")
+                            profit_margin = info.get('profitMargins')
+                            operating_margin = info.get('operatingMargins')
+                            roa = info.get('returnOnAssets')
+                            roe = info.get('returnOnEquity')
+                            
+                            st.write(f"• Profit Margin: {profit_margin*100:.2f}%" if profit_margin else "• Profit Margin: N/A")
+                            st.write(f"• Operating Margin: {operating_margin*100:.2f}%" if operating_margin else "• Operating Margin: N/A")
+                            st.write(f"• Return on Assets: {roa*100:.2f}%" if roa else "• Return on Assets: N/A")
+                            st.write(f"• Return on Equity: {roe*100:.2f}%" if roe else "• Return on Equity: N/A")
+                
+                    # Recent Performance Chart
+                    with st.expander("📈 Recent Price Chart", expanded=True):
+                        # Get 1 year of data for chart
+                        hist_data = stock.history(period="1y")
+                        if not hist_data.empty:
+                            # Create a more detailed chart with candlesticks
+                            from plotly.subplots import make_subplots
+                            chart_fig = go.Figure()
+                            
+                            # Add candlestick chart
+                            chart_fig.add_trace(go.Candlestick(
+                                x=hist_data.index,
+                                open=hist_data['Open'],
+                                high=hist_data['High'],
+                                low=hist_data['Low'],
+                                close=hist_data['Close'],
+                                name="Price"
+                            ))
+                            
+                            # Add moving averages
+                            ma_20 = hist_data['Close'].rolling(window=20).mean()
+                            ma_50 = hist_data['Close'].rolling(window=50).mean()
+                            
+                            chart_fig.add_trace(go.Scatter(
+                                x=hist_data.index,
+                                y=ma_20,
+                                mode='lines',
+                                name='20-day MA',
+                                line=dict(color='orange', width=1)
+                            ))
+                            
+                            chart_fig.add_trace(go.Scatter(
+                                x=hist_data.index,
+                                y=ma_50,
+                                mode='lines',
+                                name='50-day MA',
+                                line=dict(color='red', width=1)
+                            ))
+                            
+                            chart_fig.update_layout(
+                                title=f"{lookup_ticker} - 1 Year Price Chart",
+                                xaxis_title="Date",
+                                yaxis_title="Price (USD)",
+                                template="plotly_white",
+                                height=500,
+                                xaxis_rangeslider_visible=False
+                            )
+                            st.plotly_chart(chart_fig, use_container_width=True)
+                        else:
+                            st.warning("No historical data available for chart.")
+                
+                    # News (if available)
+                    with st.expander("📰 Recent News"):
+                        try:
+                            news = stock.news
+                            if news:
+                                for i, article in enumerate(news[:5], 1):  # Show top 5 news
+                                    with st.container():
+                                        st.write(f"**{i}. {article.get('title', 'N/A')}**")
+                                        col_news1, col_news2 = st.columns([2, 1])
+                                        with col_news1:
+                                            st.write(f"*Source: {article.get('publisher', 'N/A')}*")
+                                        with col_news2:
+                                            if article.get('link'):
+                                                st.link_button("Read Full Article", article['link'])
+                                        st.divider()
+                            else:
+                                st.info("No recent news available")
+                        except Exception as news_error:
+                            st.info("News data unavailable")
+                
+                    # Institutional Holdings
+                    with st.expander("🏛️ Institutional Holdings"):
+                        try:
+                            institutional_holders = stock.institutional_holders
+                            if institutional_holders is not None and not institutional_holders.empty:
+                                st.dataframe(institutional_holders.head(10), use_container_width=True)
+                            else:
+                                st.info("Institutional holdings data unavailable")
+                        except Exception:
+                            st.info("Institutional holdings data unavailable")
+                
+                    # Recommendations
+                    with st.expander("🎯 Analyst Recommendations"):
+                        try:
+                            recommendations = stock.recommendations
+                            if recommendations is not None and not recommendations.empty:
+                                st.dataframe(recommendations.tail(10), use_container_width=True)
+                            else:
+                                st.info("Analyst recommendations unavailable")
+                        except Exception:
+                            st.info("Analyst recommendations unavailable")
+                
+                except Exception as e:
+                    st.error(f"❌ Error fetching data for {lookup_ticker}: {str(e)}")
+                    st.info("💡 **Tips:**\n"
+                           "• Make sure the ticker symbol is correct\n"
+                           "• Try a different symbol\n"
+                           "• Check your internet connection")
         else:
-            try:
-                info = fetch_stock_info(lookup_ticker)
-                # Metrics grid
-                stats = {
-                    "Current Price": info.get("currentPrice"),
-                    "Prev Close": info.get("previousClose"),
-                    "Open": info.get("open"),
-                    "52w High": info.get("fiftyTwoWeekHigh"),
-                    "52w Low": info.get("fiftyTwoWeekLow"),
-                    "Volume": info.get("volume"),
-                    "Market Cap": info.get("marketCap"),
-                    "P/E Ratio": info.get("trailingPE"),
-                    "Dividend Yield": info.get("dividendYield"),
-                    "Beta": info.get("beta")
-                }
-                cols = st.columns(3)
-                for i, (label, val) in enumerate(stats.items()):
-                    with cols[i % 3]:
-                        display = f"{val:,}" if isinstance(val, (int, float)) else val or "N/A"
-                        st.metric(label, display)
-
-                # Company info
-                with st.expander("Company Profile"):
-                    st.write(f"**{info.get('longName','N/A')}**")
-                    st.write(f"{info.get('sector','')} / {info.get('industry','')}")
-                    st.write(info.get("longBusinessSummary","No description available."))
-
-                # Historical chart
-                hist = fetch_stock_history(lookup_ticker)
-                if not hist.empty:
-                    fig = go.Figure([
-                        go.Scatter(x=hist.index, y=hist["Close"], mode="lines", name="Close")
-                    ])
-                    fig.update_layout(
-                        title=f"{lookup_ticker} 1Y Price",
-                        xaxis_title="Date", yaxis_title="Price (USD)",
-                        template="plotly_white", height=400
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-
-                # News and recommendations
-                with st.expander("Latest News"):
-                    news = yf.Ticker(lookup_ticker).news or []
-                    if news:
-                        for article in news[:5]:
-                            st.write(f"**{article.get('title')}**")
-                            st.write(article.get("publisher",""))
-                            if link:=article.get("link"):
-                                st.write(link)
-                            st.markdown("---")
-                    else:
-                        st.info("No recent news.")
-
-                with st.expander("Analyst Recommendations"):
-                    recs = yf.Ticker(lookup_ticker).recommendations
-                    if recs is not None and not recs.empty:
-                        st.dataframe(recs.tail(5)[["Firm","To Grade","From Grade","Action"]])
-                    else:
-                        st.info("No recommendations available.")
-            except Exception as e:
-                st.error(f"Error loading {lookup_ticker}: {str(e)}")
+            st.warning("⚠️ Please enter a stock ticker symbol to continue.")
+    
+    # Quick lookup buttons for popular stocks
+    st.divider()
+    st.subheader("🔥 Popular Stocks")
+    st.caption("Click on any stock below to quickly look it up")
+    popular_stocks = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "NFLX"]
+    
+    cols = st.columns(4)
+    for i, stock in enumerate(popular_stocks):
+        with cols[i % 4]:
+            if st.button(stock, key=f"popular_{stock}"):
+                st.session_state.lookup_ticker = stock
+                st.rerun()
