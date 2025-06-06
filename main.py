@@ -9,6 +9,7 @@ import numpy as np
 import ssl
 import time
 import os
+import requests
 
 # SSL configuration
 try:
@@ -564,85 +565,37 @@ elif nav == "Stock Lookup":
                         else:
                             st.warning("No historical data available for chart.")
                 
-                    # News (if available)
+                    # News (via Yahoo Finance search API)
                     with st.expander("📰 Recent News"):
                         try:
-                            with st.spinner("Fetching all latest news articles..."):
-                                news = stock.news
-                                if news:
-                                    st.subheader(f"Latest Headlines for {info.get('longName', lookup_ticker)}")
-                                    
-                                    # Display news count and date range
-                                    if len(news) > 0:
-                                        try:
-                                            oldest = min([article.get('providerPublishTime') for article in news if article.get('providerPublishTime')])
-                                            newest = max([article.get('providerPublishTime') for article in news if article.get('providerPublishTime')])
-                                            oldest_date = datetime.fromtimestamp(oldest).strftime('%Y-%m-%d')
-                                            newest_date = datetime.fromtimestamp(newest).strftime('%Y-%m-%d')
-                                            st.caption(f"Showing all {len(news)} available articles • {oldest_date} to {newest_date}")
-                                        except:
-                                            st.caption(f"Showing all {len(news)} available articles")
-                                    
-                                    # Add filtering options
-                                    if len(news) > 5:
-                                        sort_option = st.radio(
-                                            "Sort articles by:",
-                                            ["Newest first", "Oldest first"],
-                                            horizontal=True,
-                                            key=f"sort_news_{lookup_ticker}"
-                                        )
-                                        
-                                        if sort_option == "Newest first":
-                                            # Sort by newest first (default from Yahoo)
-                                            sorted_news = sorted(
-                                                news, 
-                                                key=lambda x: x.get('providerPublishTime', 0),
-                                                reverse=True
-                                            )
-                                        else:
-                                            # Sort by oldest first
-                                            sorted_news = sorted(
-                                                news,
-                                                key=lambda x: x.get('providerPublishTime', 0)
-                                            )
-                                    else:
-                                        sorted_news = news
-                                    
-                                    # Use tabs if there are many articles
-                                    if len(sorted_news) > 10:
-                                        tab_groups = ["Latest (1-10)"]
-                                        if len(sorted_news) > 10:
-                                            tab_groups.append(f"More ({11}-{len(sorted_news)})")
-                                            
-                                        tabs = st.tabs(tab_groups)
-                                        
-                                        # First 10 articles in first tab
-                                        with tabs[0]:
-                                            for i, article in enumerate(sorted_news[:10], 1):
-                                                _display_article(article, i)
-                                        
-                                        # Remaining articles in second tab
-                                        if len(sorted_news) > 10:
-                                            with tabs[1]:
-                                                for i, article in enumerate(sorted_news[10:], 11):
-                                                    _display_article(article, i)
-                                    else:
-                                        # Show all articles directly when fewer than 10
-                                        for i, article in enumerate(sorted_news, 1):
-                                            _display_article(article, i)
-                                
-                                else:
-                                    st.info("No recent news available for this stock.")
-                                    st.write("Try another source for news like:")
-                                    st.markdown("- [Yahoo Finance](https://finance.yahoo.com/quote/" + lookup_ticker + ")")
-                                    st.markdown("- [CNBC](https://www.cnbc.com/quotes/" + lookup_ticker + ")")
-                                    st.markdown("- [MarketWatch](https://www.marketwatch.com/investing/stock/" + lookup_ticker + ")")
-                        except Exception as news_error:
-                            st.info(f"News data unavailable. Error: {str(news_error)}")
-                            st.write("Try checking these financial news sources:")
-                            st.markdown("- [Yahoo Finance](https://finance.yahoo.com/quote/" + lookup_ticker + ")")
-                            st.markdown("- [CNBC](https://www.cnbc.com/quotes/" + lookup_ticker + ")")
-                            st.markdown("- [MarketWatch](https://www.marketwatch.com/investing/stock/" + lookup_ticker + ")")
+                            # call the canonical search endpoint for news
+                            url = (
+                                f"https://query2.finance.yahoo.com/v1/finance/search"
+                                f"?q={lookup_ticker}&quotesCount=0&newsCount=20"
+                            )
+                            resp = requests.get(url, timeout=5)
+                            news_items = resp.json().get("news", [])
+                            if news_items:
+                                for idx, item in enumerate(news_items, 1):
+                                    title = item.get("title", "N/A")
+                                    link  = item.get("link", "")
+                                    pub_ts = item.get("providerPublishTime")
+                                    date_str = (
+                                        datetime.fromtimestamp(pub_ts).strftime("%b %d, %Y")
+                                        if pub_ts else ""
+                                    )
+                                    st.markdown(f"**{idx}. {title}**")
+                                    st.write(f"*{item.get('publisher','N/A')} • {date_str}*")
+                                    if link:
+                                        st.markdown(f"[Read full article]({link})")
+                                    summary = item.get("summary") or item.get("snippet", "")
+                                    if summary:
+                                        st.write(summary)
+                                    st.divider()
+                            else:
+                                st.info("No recent news found for this ticker.")
+                        except Exception as e:
+                            st.error(f"Error fetching news: {e}")
                 
                     # Institutional Holdings
                     with st.expander("🏛️ Institutional Holdings"):
