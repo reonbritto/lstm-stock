@@ -574,7 +574,17 @@ elif nav == "Stock Lookup":
                                 f"?q={lookup_ticker}&quotesCount=0&newsCount=20"
                             )
                             resp = requests.get(url, timeout=5)
-                            news_items = resp.json().get("news", [])
+                            if resp.ok:
+                                try:
+                                    data = resp.json()
+                                except ValueError:
+                                    news_items = []
+                                else:
+                                    news_items = data.get("news", [])
+                            else:
+                                news_items = []
+                            
+
                             if news_items:
                                 for idx, item in enumerate(news_items, 1):
                                     title = item.get("title", "N/A")
