@@ -13,6 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 import feedparser
 from urllib.parse import quote
+from news_utils import get_stock_news, get_general_news, display_news_article
 
 # SSL configuration
 try:
@@ -660,274 +661,62 @@ elif nav == "Market News":
         
         fetch_news_button = st.button("📰 Get Latest News", type="primary", use_container_width=True)
     
-    @st.cache_data(ttl=1800)  # Cache for 30 minutes
-    def scrape_yahoo_finance_news(category="general", symbol=None, max_articles=20):
-        """Scrape Yahoo Finance news with better error handling"""
-        try:
-            articles = []
-            
-            if category == "Stock-Specific" and symbol:
-                # Get stock-specific news using yfinance
-                ticker = yf.Ticker(symbol)
-                try:
-                    news_data = ticker.news
-                    
-                    if not news_data:
-                        # Fallback to general market news if no stock-specific news
-                        return scrape_yahoo_finance_news("General Market", None, max_articles)
-                    
-                    for article in news_data[:max_articles]:
-                        # Better data validation and fallback values
-                        title = article.get('title', f'{symbol} News Update')
-                        summary = article.get('summary', 'Click to read full article for details.')
-                        publisher = article.get('publisher', 'Yahoo Finance')
-                        link = article.get('link', '')
-                        
-                        # Handle timestamp properly
-                        publish_time = article.get('providerPublishTime')
-                        if publish_time:
-                            try:
-                                publish_time = datetime.fromtimestamp(publish_time)
-                            except (ValueError, OSError):
-                                publish_time = datetime.now() - timedelta(hours=1)
-                        else:
-                            publish_time = datetime.now() - timedelta(hours=1)
-                        
-                        # Get thumbnail safely
-                        thumbnail = ''
-                        if article.get('thumbnail') and article['thumbnail'].get('resolutions'):
-                            thumbnail = article['thumbnail']['resolutions'][0].get('url', '')
-                        
-                        articles.append({
-                            'title': title,
-                            'summary': summary,
-                            'link': link,
-                            'publisher': publisher,
-                            'publish_time': publish_time,
-                            'category': f'{symbol} News',
-                            'thumbnail': thumbnail
-                        })
-                        
-                except Exception as e:
-                    st.warning(f"Could not fetch news for {symbol}. Trying general market news instead.")
-                    return scrape_yahoo_finance_news("General Market", None, max_articles)
-                
+    if fetch_news_button:
+        with st.spinner("🔄 Fetching latest news..."):
+            if news_category == "Stock-Specific" and stock_symbol:
+                articles, error = get_stock_news(stock_symbol, max_articles=10)
+                news_title = f"📰 Latest {stock_symbol} News"
             else:
-                # General market news using multiple sources
-                try:
-                    # Method 1: Try RSS feeds first
-                    rss_urls = {
-                        "General Market": [
-                            "https://feeds.finance.yahoo.com/rss/2.0/headline",
-                            "https://finance.yahoo.com/rss/headline"
-                        ],
-                        "Crypto": [
-                            "https://feeds.finance.yahoo.com/rss/2.0/category-crypto"
-                        ],
-                        "Economy": [
-                            "https://feeds.finance.yahoo.com/rss/2.0/category-economy"
-                        ],
-                        "Technology": [
-                            "https://feeds.finance.yahoo.com/rss/2.0/category-technology"
-                        ]
-                    }
-                    
-                    feed_urls = rss_urls.get(category, rss_urls["General Market"])
-                    
-                    for rss_url in feed_urls:
-                        try:
-                            feed = feedparser.parse(rss_url)
-                            
-                            if feed.entries:
-                                for entry in feed.entries[:max_articles]:
-                                    # Parse publication time
-                                    pub_time = datetime.now() - timedelta(hours=2)
-                                    if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                                        try:
-                                            pub_time = datetime(*entry.published_parsed[:6])
-                                        except:
-                                            pass
-                                    elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-                                        try:
-                                            pub_time = datetime(*entry.updated_parsed[:6])
-                                        except:
-                                            pass
-                                
-                                    # Clean summary
-                                    summary = entry.get('summary', entry.get('description', 'No summary available'))
-                                    if summary:
-                                        # Remove HTML tags from summary
-                                        try:
-                                            from bs4 import BeautifulSoup
-                                            summary = BeautifulSoup(summary, 'html.parser').get_text()
-                                            summary = summary.strip()[:300]  # Limit length
-                                        except:
-                                            summary = summary[:300]  # Fallback if BeautifulSoup fails
-                                
-                                    articles.append({
-                                        'title': entry.get('title', 'Market News Update'),
-                                        'summary': summary,
-                                        'link': entry.get('link', ''),
-                                        'publisher': entry.get('source', {}).get('href', 'Yahoo Finance') if isinstance(entry.get('source'), dict) else 'Yahoo Finance',
-                                        'publish_time': pub_time,
-                                        'category': category,
-                                        'thumbnail': ''
-                                    })
-                                    
-                            break  # If we got articles from this feed, stop trying others
-                        except Exception as feed_error:
-                            continue  # Try next feed
-                        
-                    # Method 2: If RSS failed, try fallback sample data
-                    if not articles:
-                        # Fallback to sample news data
-                        sample_news = [
-                            {
-                                'title': 'Market Update: Major Indices Show Mixed Performance',
-                                'summary': 'Financial markets experienced mixed trading as investors weigh economic indicators and corporate earnings reports.',
-                                'link': 'https://finance.yahoo.com',
-                                'publisher': 'Yahoo Finance',
-                                'publish_time': datetime.now() - timedelta(hours=1),
-                                'category': category,
-                                'thumbnail': ''
-                            },
-                            {
-                                'title': 'Federal Reserve Policy Decision Expected This Week',
-                                'summary': 'Analysts anticipate key monetary policy announcements that could impact market direction.',
-                                'link': 'https://finance.yahoo.com',
-                                'publisher': 'Yahoo Finance',
-                                'publish_time': datetime.now() - timedelta(hours=3),
-                                'category': category,
-                                'thumbnail': ''
-                            },
-                            {
-                                'title': 'Technology Sector Leads Market Gains',
-                                'summary': 'Tech stocks outperformed broader market indices amid positive earnings results.',
-                                'link': 'https://finance.yahoo.com',
-                                'publisher': 'Yahoo Finance',
-                                'publish_time': datetime.now() - timedelta(hours=5),
-                                'category': category,
-                                'thumbnail': ''
-                            }
-                        ]
-                        articles.extend(sample_news)
-                        
-                except Exception as general_error:
-                    st.error(f"Error fetching general news: {str(general_error)}")
-                    return [], f"Error fetching news: {str(general_error)}"
-        
-            # Validate and clean articles
-            valid_articles = []
-            for article in articles:
-                if article.get('title') and article['title'] != 'No Title':
-                    valid_articles.append(article)
+                articles, error = get_general_news(news_category, max_articles=10)
+                news_title = f"📰 Latest {news_category} News"
             
-            return valid_articles[:max_articles], None
-            
-        except Exception as e:
-            return [], f"Error fetching news: {str(e)}"
-
-def display_news_card(article, index):
-    """Display individual news card with professional styling"""
-    with st.container():
-        # Calculate time ago safely
-        time_diff = datetime.now() - article['publish_time']
+            if error:
+                st.error(f"❌ Error: {error}")
+            elif articles:
+                st.success(f"✅ Found {len(articles)} articles")
+                
+                # Display articles
+                st.subheader(news_title)
+                st.caption(f"Showing {len(articles)} articles")
+                
+                for i, article in enumerate(articles):
+                    display_news_article(article, i)
+                
+                # Export option
+                if st.button("💾 Export News Data"):
+                    import pandas as pd
+                    news_df = pd.DataFrame(articles)
+                    csv = news_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download as CSV",
+                        data=csv,
+                        file_name=f"news_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+            else:
+                st.warning("No news articles found. Please try again later.")
+    
+    else:
+        # Show some sample info when no button is pressed
+        st.info("👆 Select a news category and click 'Get Latest News' to fetch articles!")
         
-        if time_diff.days > 7:
-            time_ago = f"{time_diff.days} days ago"
-        elif time_diff.days > 0:
-            time_ago = f"{time_diff.days} days ago"
-        elif time_diff.seconds > 3600:
-            hours = time_diff.seconds // 3600
-            time_ago = f"{hours} hours ago"
-        elif time_diff.seconds > 60:
-            minutes = time_diff.seconds // 60
-            time_ago = f"{minutes} minutes ago"
-        else:
-            time_ago = "Just now"
+        # Quick access buttons
+        st.subheader("🚀 Quick Access")
+        col1, col2, col3, col4 = st.columns(4)
         
-        # Ensure we have valid data
-        title = article.get('title', 'News Update')
-        summary = article.get('summary', 'Click to read the full article.')
-        publisher = article.get('publisher', 'News Source')
-        category = article.get('category', 'General')
-        
-        # Create a more robust card design
-        with st.container():
-            st.markdown(f"""
-            <div style="
-                border: 1px solid #e1e8ed;
-                border-radius: 12px;
-                padding: 20px;
-                margin: 15px 0;
-                background: #ffffff;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-                transition: all 0.3s ease;
-            ">
-                <div style="margin-bottom: 15px;">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                        <h3 style="
-                            color: #1da1f2; 
-                            margin: 0; 
-                            font-size: 1.1rem; 
-                            line-height: 1.4;
-                            font-weight: 600;
-                            flex: 1;
-                            margin-right: 15px;
-                        ">
-                            {title}
-                        </h3>
-                        <span style="
-                            background: linear-gradient(45deg, #1da1f2, #0d8bd9);
-                            color: white;
-                            padding: 4px 12px;
-                            border-radius: 15px;
-                            font-size: 0.8rem;
-                            font-weight: 500;
-                            white-space: nowrap;
-                        ">
-                            {category}
-                        </span>
-                    </div>
-                    
-                    <p style="
-                        color: #536471; 
-                        margin: 10px 0; 
-                        line-height: 1.5;
-                        font-size: 0.95rem;
-                    ">
-                        {summary[:200]}{'...' if len(summary) > 200 else ''}
-                    </p>
-                    
-                    <div style="
-                        display: flex; 
-                        justify-content: space-between; 
-                        align-items: center; 
-                        margin-top: 15px;
-                        padding-top: 10px;
-                        border-top: 1px solid #f0f0f0;
-                    ">
-                        <div style="display: flex; align-items: center; gap: 15px;">
-                            <span style="color: #536471; font-weight: 500; font-size: 0.9rem;">
-                                📰 {publisher}
-                            </span>
-                            <span style="color: #8b98a5; font-size: 0.85rem;">
-                                🕒 {time_ago}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Action buttons
-            if article.get('link'):
-                col1, col2, col3 = st.columns([2, 2, 6])
-                with col1:
-                    if st.button("📖 Read More", key=f"read_{index}", help="Open full article"):
-                        st.markdown(f"🔗 [Open Article]({article['link']})")
-                with col2:
-                    if st.button("📤 Share", key=f"share_{index}", help="Copy article link"):
-                        st.code(article['link'], language=None)
-
-# ...existing code for the rest of the news section...
+        with col1:
+            if st.button("📈 Market News"):
+                st.session_state.quick_news = "General Market"
+                st.rerun()
+        with col2:
+            if st.button("💻 Tech News"):
+                st.session_state.quick_news = "Technology"
+                st.rerun()
+        with col3:
+            if st.button("₿ Crypto News"):
+                st.session_state.quick_news = "Crypto"
+                st.rerun()
+        with col4:
+            if st.button("🏛️ Economy News"):
+                st.session_state.quick_news = "Economy"
+                st.rerun()
