@@ -466,7 +466,7 @@ elif nav == "Stock Lookup":
                         beta = info.get('beta')
                         
                         st.metric("P/E Ratio", f"{pe_ratio:.2f}" if pe_ratio else "N/A")
-                        st.metric("Dividend Yield", f"{dividend_yield*100:.2f}%" if dividend_yield else "N/A")
+                        st.metric("Dividend Yield", f"{dividend_yield}%" if dividend_yield else "N/A")   
                         st.metric("Beta", f"{beta:.2f}" if beta else "N/A")
                 
                     # Company Information
