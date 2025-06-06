@@ -9,11 +9,6 @@ import numpy as np
 import ssl
 import time
 import os
-import requests
-from bs4 import BeautifulSoup
-import feedparser
-from urllib.parse import quote
-from news_utils import get_stock_news, get_general_news, display_news_article
 
 # SSL configuration
 try:
@@ -44,7 +39,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Navigation
-nav = st.sidebar.radio("🔀 Navigation", ["Stock Prediction", "Stock Lookup", "Market News"])
+nav = st.sidebar.radio("🔀 Navigation", ["Stock Prediction", "Stock Lookup"])
 
 if nav == "Stock Prediction":
     st.sidebar.header("🔧 Configuration")
@@ -631,92 +626,4 @@ elif nav == "Stock Lookup":
         with cols[i % 4]:
             if st.button(stock, key=f"popular_{stock}"):
                 st.session_state.lookup_ticker = stock
-                st.rerun()
-                
-elif nav == "Market News":
-    st.markdown('<h1 class="main-header">📰 Market News Center</h1>', unsafe_allow_html=True)
-    st.markdown("""
-    <div style="text-align: center; margin-bottom: 2rem;">
-        <p style="font-size: 1.2rem; color: #666;">
-            Stay updated with the latest financial news and market insights
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # News source selection
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        news_category = st.selectbox(
-            "📺 Select News Category",
-            ["General Market", "Stock-Specific", "Crypto", "Economy", "Technology"],
-            help="Choose the type of news you want to see"
-        )
-        
-        if news_category == "Stock-Specific":
-            stock_symbol = st.text_input(
-                "Enter Stock Symbol",
-                value="AAPL",
-                placeholder="e.g., AAPL, GOOGL, TSLA"
-            ).upper().strip()
-        
-        fetch_news_button = st.button("📰 Get Latest News", type="primary", use_container_width=True)
-    
-    if fetch_news_button:
-        with st.spinner("🔄 Fetching latest news..."):
-            if news_category == "Stock-Specific" and stock_symbol:
-                articles, error = get_stock_news(stock_symbol, max_articles=10)
-                news_title = f"📰 Latest {stock_symbol} News"
-            else:
-                articles, error = get_general_news(news_category, max_articles=10)
-                news_title = f"📰 Latest {news_category} News"
-            
-            if error:
-                st.error(f"❌ Error: {error}")
-            elif articles:
-                st.success(f"✅ Found {len(articles)} articles")
-                
-                # Display articles
-                st.subheader(news_title)
-                st.caption(f"Showing {len(articles)} articles")
-                
-                for i, article in enumerate(articles):
-                    display_news_article(article, i)
-                
-                # Export option
-                if st.button("💾 Export News Data"):
-                    import pandas as pd
-                    news_df = pd.DataFrame(articles)
-                    csv = news_df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download as CSV",
-                        data=csv,
-                        file_name=f"news_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
-            else:
-                st.warning("No news articles found. Please try again later.")
-    
-    else:
-        # Show some sample info when no button is pressed
-        st.info("👆 Select a news category and click 'Get Latest News' to fetch articles!")
-        
-        # Quick access buttons
-        st.subheader("🚀 Quick Access")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            if st.button("📈 Market News"):
-                st.session_state.quick_news = "General Market"
-                st.rerun()
-        with col2:
-            if st.button("💻 Tech News"):
-                st.session_state.quick_news = "Technology"
-                st.rerun()
-        with col3:
-            if st.button("₿ Crypto News"):
-                st.session_state.quick_news = "Crypto"
-                st.rerun()
-        with col4:
-            if st.button("🏛️ Economy News"):
-                st.session_state.quick_news = "Economy"
                 st.rerun()
