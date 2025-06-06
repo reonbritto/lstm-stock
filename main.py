@@ -639,68 +639,45 @@ elif nav == "Stock Lookup":
                             st.info("Institutional holdings data unavailable")
                 
                     # Recommendations
-                    with st.expander("🎯 Analyst Recommendations"):
+                    with st.expander("📈 Peer Comparison"):
                         try:
-                            recommendations = stock.recommendations
-
-                            if recommendations is not None and not recommendations.empty:
-                                st.subheader("Latest Analyst Ratings")
-
-                                # Ensure datetime index
-                                if not isinstance(recommendations.index, pd.DatetimeIndex):
-                                    recommendations.index = pd.to_datetime(recommendations.index)
-
-                                # Sort in descending order
-                                recommendations = recommendations.sort_index(ascending=False)
-
-                                # Filter recent recommendations (last 12 months)
-                                recent = recommendations[recommendations.index > (datetime.now() - timedelta(days=365))]
-
-                                # === Summary Chart ===
-                                st.markdown("##### Analyst Ratings Summary (Last 12 Months)")
-                                if not recent.empty and 'To Grade' in recent.columns:
-                                    grade_counts = recent['To Grade'].value_counts()
-                                    if not grade_counts.empty:
-                                        fig = px.bar(
-                                            grade_counts.reset_index().rename(columns={'index': 'Rating', 'To Grade': 'Count'}),
-                                            x='Rating', y='Count',
-                                            color='Rating',
-                                            title="Recommendation Distribution (All Firms, Last 12 Months)"
-                                        )
-                                        st.plotly_chart(fig, use_container_width=True)
-                                        st.dataframe(grade_counts.rename_axis('Rating').reset_index(name='Count'),
-                                                     use_container_width=True, hide_index=True)
-                                    else:
-                                        st.info("No recent analyst ratings by grade available.")
-                                else:
-                                    st.info("No recent analyst ratings by grade available.")
-
-                                # === Detailed Table ===
-                                st.markdown("##### Detailed Recent Recommendations")
-                                display_cols = [col for col in ['Firm', 'From Grade', 'To Grade', 'Action'] if col in recommendations.columns]
-                                if display_cols:
-                                    table = recommendations[display_cols].copy().head(30)
-                                    table.index = table.index.strftime('%Y-%m-%d')
-
-                                    def highlight_action(val):
-                                        if val == 'up':
-                                            return 'background-color: #d4f7d4'
-                                        elif val == 'down':
-                                            return 'background-color: #ffd6d6'
-                                        return ''
-
-                                    if 'Action' in table.columns:
-                                        st.dataframe(table.style.applymap(highlight_action, subset=['Action']), use_container_width=True)
-                                    else:
-                                        st.dataframe(table, use_container_width=True)
-                                else:
-                                    st.dataframe(recommendations.head(20), use_container_width=True)
-
+                            st.subheader("Compare With Peers")
+                            sector = info.get("sector", None)
+                            industry = info.get("industry", None)
+                            if not sector or not industry:
+                                st.info("Peer comparison unavailable: sector or industry info missing.")
                             else:
-                                st.info("Analyst recommendations unavailable for this stock.")
-
+                                # Get tickers from the same industry (limited to top 5 by market cap)
+                                all_tickers = yf.Tickers(' '.join([
+                                    "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "NFLX", "JPM", "V", "UNH", "HD", "PG", "DIS", "MA", "BAC", "PFE", "KO", "PEP", "CSCO"
+                                ]))
+                                peer_data = []
+                                for tkr in all_tickers.tickers:
+                                    try:
+                                        peer_info = tkr.info
+                                        if peer_info.get("industry") == industry and peer_info.get("symbol") != lookup_ticker:
+                                            peer_data.append({
+                                                "Symbol": peer_info.get("symbol"),
+                                                "Name": peer_info.get("shortName", ""),
+                                                "Market Cap": peer_info.get("marketCap", 0),
+                                                "Price": peer_info.get("currentPrice", None),
+                                                "P/E": peer_info.get("trailingPE", None),
+                                                "Sector": peer_info.get("sector", ""),
+                                                "Industry": peer_info.get("industry", "")
+                                            })
+                                    except Exception:
+                                        continue
+                                peer_df = pd.DataFrame(peer_data)
+                                if not peer_df.empty:
+                                    peer_df = peer_df.sort_values("Market Cap", ascending=False).head(5)
+                                    st.dataframe(peer_df[["Symbol", "Name", "Market Cap", "Price", "P/E"]], use_container_width=True)
+                                    # Simple bar chart for market cap
+                                    fig = px.bar(peer_df, x="Symbol", y="Market Cap", hover_name="Name", title="Top Peers by Market Cap")
+                                    st.plotly_chart(fig, use_container_width=True)
+                                else:
+                                    st.info("No peer companies found in the same industry among major tickers.")
                         except Exception as e:
-                            st.error(f"Could not fetch or display analyst recommendations: {e}")
+                            st.error(f"Could not fetch peer comparison: {e}")
                 
                 except Exception as e:
                     st.error(f"❌ Error fetching data for {lookup_ticker}: {str(e)}")
