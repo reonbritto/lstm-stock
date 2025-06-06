@@ -25,3 +25,6 @@ typing-extensions>=4.6.0
 xgboost==1.7.6
 transformers==4.40.2
 torch>=2.0.0
+feedparser>=6.0.10
+textblob>=0.17.1
+tweepy>=4.14.0
