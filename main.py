@@ -640,81 +640,139 @@ elif nav == "Stock Lookup":
                     # Recommendations
                     with st.expander("🎯 Analyst Recommendations"):
                         try:
-                            rec_df = stock.recommendations
-                            if rec_df is not None and not rec_df.empty:
-                                # Map textual ratings to numeric scores
-                                rating_map = {
-                                    "Strong Buy": 2,
-                                    "Buy": 1,
-                                    "Hold": 0,
-                                    "Underperform": -1,
-                                    "Sell": -1,
-                                    "Strong Sell": -2
-                                }
-                                rec_df = rec_df.copy()
-                                rec_df['score'] = rec_df['To Grade'].map(rating_map).fillna(0)
+                            import plotly.express as px
+                            recommendations = stock.recommendations
+                            
+                            if recommendations is not None and not recommendations.empty:
+                                # Convert to datetime and sort by most recent first
+                                if not isinstance(recommendations.index, pd.DatetimeIndex):
+                                    recommendations.index = pd.to_datetime(recommendations.index)
+                                recommendations = recommendations.sort_index(ascending=False)
                                 
-                                # Compute overall sentiment
-                                avg_score = rec_df['score'].mean()
-                                sentiment_label = (
-                                    "Bullish" if avg_score > 0.5
-                                    else "Bearish" if avg_score < -0.5
-                                    else "Neutral"
-                                )
-                                st.metric(
-                                    label="Overall Analyst Sentiment",
-                                    value=sentiment_label,
-                                    delta=f"{avg_score:.2f}"
-                                )
+                                # Get the firm column and rating column
+                                firm_col = 'Firm' if 'Firm' in recommendations.columns else None
+                                grade_col = 'To Grade' if 'To Grade' in recommendations.columns else None
                                 
-                                # Distribution of ratings
-                                counts = rec_df['To Grade'].value_counts().reset_index()
-                                counts.columns = ['Rating', 'Count']
-                                fig = px.bar(
-                                    counts, x='Rating', y='Count',
-                                    color='Rating',
-                                    category_orders={'Rating': list(rating_map.keys())},
-                                    title="Ratings Distribution"
-                                )
-                                fig.update_layout(xaxis_title="", yaxis_title="Number of Ratings")
-                                st.plotly_chart(fig, use_container_width=True)
+                                # Create tabs for different views
+                                rec_tabs = st.tabs(["Summary", "By Firm", "Detailed Data"])
                                 
-                                # Detailed recent recommendations
-                                st.markdown("**Recent Analyst Actions**")
-                                display_cols = ['Firm', 'To Grade', 'From Grade', 'Action']
-                                available = [c for c in display_cols if c in rec_df.columns]
-                                table = rec_df[available].head(10).copy()
-                                table.index = table.index.strftime('%Y-%m-%d')
-                                table.rename(columns={
-                                    'Firm': 'Analyst Firm',
-                                    'To Grade': 'New Rating',
-                                    'From Grade': 'Old Rating',
-                                    'Action': 'Action Taken'
-                                }, inplace=True)
-                                st.dataframe(table, use_container_width=True)
+                                with rec_tabs[0]:
+                                    st.subheader("Recommendation Summary")
+                                    
+                                    # Get last 12 months of recommendations
+                                    recent_recs = recommendations[recommendations.index >= (datetime.now() - timedelta(days=365))]
+                                    if not recent_recs.empty and grade_col:
+                                        # Group by recommendation grade
+                                        grade_counts = recent_recs[grade_col].value_counts()
+                                        
+                                        # Create summary dataframe
+                                        summary_df = pd.DataFrame({
+                                            'Rating': grade_counts.index,
+                                            'Count': grade_counts.values
+                                        })
+                                        
+                                        # Display as chart
+                                        fig = px.pie(summary_df, values='Count', names='Rating',
+                                                    title=f"Analyst Ratings Distribution (Last 12 Months)",
+                                                    color_discrete_sequence=px.colors.qualitative.Bold,
+                                                    hole=0.4)
+                                        fig.update_traces(textposition='inside', textinfo='percent+label')
+                                        st.plotly_chart(fig, use_container_width=True)
+                                        
+                                        # Show most recent overall rating
+                                        most_common = grade_counts.idxmax()
+                                        st.info(f"💡 Consensus rating: **{most_common}** ({grade_counts[most_common]} analysts)")
+                                    else:
+                                        st.info("Not enough recent data to generate rating summary. Check the Detailed Data tab.")
+                                
+                                with rec_tabs[1]:
+                                    st.subheader("Ratings by Firm")
+                                    
+                                    if firm_col and grade_col:
+                                        # Get recent unique firm ratings (most recent per firm)
+                                        firm_recs = recommendations.sort_index(ascending=False)
+                                        latest_by_firm = firm_recs.drop_duplicates(subset=firm_col, keep='first')
+                                        
+                                        # Display as a nice table
+                                        col1, col2 = st.columns([2, 1])
+                                        with col1:
+                                            # Show top analysts by recency
+                                            st.write("##### Recent Analyst Ratings")
+                                            firm_ratings_table = latest_by_firm[[firm_col, grade_col]].head(10).copy()
+                                            firm_ratings_table.columns = ["Analyst Firm", "Rating"]
+                                            firm_ratings_table.index = firm_ratings_table.index.strftime('%Y-%m-%d')
+                                            st.dataframe(firm_ratings_table, use_container_width=True)
+                                        
+                                        with col2:
+                                            # Show count by firm
+                                            st.write("##### Most Active Analysts")
+                                            active_firms = firm_recs[firm_col].value_counts().head(5)
+                                            st.dataframe(pd.DataFrame({
+                                                'Firm': active_firms.index,
+                                                'Reports': active_firms.values
+                                            }), use_container_width=True)
+                                        
+                                        # Show ratings timeline by top firms
+                                        st.write("##### Rating History for Top Firms")
+                                        top_firms = firm_recs[firm_col].value_counts().head(5).index.tolist()
+                                        top_firm_data = firm_recs[firm_recs[firm_col].isin(top_firms)]
+                                        
+                                        if not top_firm_data.empty:
+                                            # Create timeline
+                                            timeline_data = []
+                                            for _, row in top_firm_data.iterrows():
+                                                timeline_data.append({
+                                                    'Date': row.name,
+                                                    'Firm': row[firm_col],
+                                                    'Rating': row[grade_col],
+                                                })
+                                            timeline_df = pd.DataFrame(timeline_data)
+                                            
+                                            # Plot timeline
+                                            fig = px.scatter(timeline_df, x='Date', y='Firm', color='Rating',
+                                                            title="Rating History by Top Firms",
+                                                            size_max=10, height=400)
+                                            fig.update_traces(marker=dict(size=12, line=dict(width=1)))
+                                            st.plotly_chart(fig, use_container_width=True)
+                                    else:
+                                        st.info("Firm-specific rating data not available.")
+                                
+                                with rec_tabs[2]:
+                                    st.subheader("Detailed Rating Data")
+                                    
+                                    # Display full dataset with better formatting
+                                    if len(recommendations) > 0:
+                                        st.write(f"Showing {min(20, len(recommendations))} of {len(recommendations)} total ratings")
+                                        
+                                        # Format dates and column names
+                                        display_recs = recommendations.head(20).copy()
+                                        display_recs.index = display_recs.index.strftime('%Y-%m-%d')
+                                        
+                                        # Rename columns for better readability
+                                        col_renames = {
+                                            'Firm': 'Analyst Firm',
+                                            'To Grade': 'Rating',
+                                            'From Grade': 'Previous Rating',
+                                            'Action': 'Action'
+                                        }
+                                        
+                                        # Apply renames only for columns that exist
+                                        rename_dict = {k: v for k, v in col_renames.items() if k in display_recs.columns}
+                                        if rename_dict:
+                                            display_recs = display_recs.rename(columns=rename_dict)
+                                        
+                                        st.dataframe(display_recs, use_container_width=True)
+                                        
+                                        # Download option
+                                        csv = recommendations.to_csv()
+                                        st.download_button(
+                                            label="Download All Ratings as CSV",
+                                            data=csv,
+                                            file_name=f"{lookup_ticker}_analyst_ratings.csv",
+                                            mime="text/csv",
+                                        )
                             else:
-                                st.info("🎯 No analyst recommendations available for this stock.")
+                                st.info("No analyst recommendations data available for this stock.")
                         except Exception as e:
-                            st.error(f"Unable to load recommendations: {e}")
-                
-                except Exception as e:
-                    st.error(f"❌ Error fetching data for {lookup_ticker}: {str(e)}")
-                    st.info("💡 **Tips:**\n"
-                           "• Make sure the ticker symbol is correct\n"
-                           "• Try a different symbol\n"
-                           "• Check your internet connection")
-        else:
-            st.warning("⚠️ Please enter a stock ticker symbol to continue.")
-    
-    # Quick lookup buttons for popular stocks
-    st.divider()
-    st.subheader("🔥 Popular Stocks")
-    st.caption("Click on any stock below to quickly look it up")
-    popular_stocks = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "NFLX"]
-    
-    cols = st.columns(4)
-    for i, stock in enumerate(popular_stocks):
-        with cols[i % 4]:
-            if st.button(stock, key=f"popular_{stock}"):
-                st.session_state.lookup_ticker = stock
-                st.rerun()
+                            st.error(f"Error retrieving analyst recommendations: {str(e)}")
+                            st.info("Alternative: Check financial news sites for analyst coverage.")
