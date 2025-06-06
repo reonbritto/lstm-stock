@@ -640,27 +640,43 @@ elif nav == "Stock Lookup":
                     
                     # Earnings & Estimates
                     with st.expander("📅 Earnings & Estimates"):
-                        # Historical earnings
+                        # Annual earnings
                         earnings = stock.earnings
                         if earnings is not None and not earnings.empty:
                             st.subheader("Historical Earnings (Annual)")
                             st.dataframe(earnings.tail(8), use_container_width=True)
                             fig = px.bar(
-                                earnings.reset_index().rename(columns={'index': 'Year', 'Earnings': 'Earnings'}),
-                                x='Year', y='Earnings',
-                                title="Annual Earnings Over Time",
+                                earnings.reset_index().rename(columns={'index':'Year','Earnings':'Earnings'}),
+                                x='Year', y='Earnings', title="Annual Earnings Over Time",
                                 color_discrete_sequence=["#1f77b4"]
                             )
                             st.plotly_chart(fig, use_container_width=True)
                         else:
-                            st.info("No historical earnings data available.")
+                            # fallback to quarterly
+                            quarterly = getattr(stock, "quarterly_earnings", None)
+                            if quarterly is not None and not quarterly.empty:
+                                st.subheader("Historical Earnings (Quarterly)")
+                                st.dataframe(quarterly.tail(8), use_container_width=True)
+                                fig_q = px.bar(
+                                    quarterly.reset_index().rename(columns={'index':'Quarter','Earnings':'Earnings'}),
+                                    x='Quarter', y='Earnings', title="Quarterly Earnings Over Time",
+                                    color_discrete_sequence=["#FFA500"]
+                                )
+                                st.plotly_chart(fig_q, use_container_width=True)
+                            else:
+                                st.info("No historical earnings data available.")
                         
                         # Next earnings date
                         calendar = stock.calendar
+                        next_date = None
                         if hasattr(calendar, 'empty') and not calendar.empty and 'Earnings Date' in calendar.index:
                             next_date = calendar.loc['Earnings Date'][0]
-                            if isinstance(next_date, (list, tuple)):
-                                next_date = next_date[0]
+                            if isinstance(next_date, (list,tuple)): next_date = next_date[0]
+                        else:
+                            info_date = stock.info.get("earningsDate")
+                            if isinstance(info_date, (list,tuple)) and info_date:
+                                next_date = info_date[0]
+                        if next_date:
                             st.metric("Next Earnings Date", pd.to_datetime(next_date).strftime("%Y-%m-%d"))
                         else:
                             st.info("No upcoming earnings date available.")
