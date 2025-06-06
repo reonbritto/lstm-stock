@@ -648,15 +648,10 @@ elif nav == "Stock Lookup":
                                     recommendations.index = pd.to_datetime(recommendations.index)
                                 recommendations = recommendations.sort_index(ascending=False)
 
-                                # Show a summary of ratings by firm and grade
+                                # Show a summary of ratings by grade (all firms)
                                 st.markdown("##### Analyst Ratings Summary (Last 12 Months)")
                                 recent = recommendations[recommendations.index > (datetime.now() - timedelta(days=365))]
-                                if not recent.empty and 'Firm' in recent.columns and 'To Grade' in recent.columns:
-                                    summary = recent.groupby(['Firm', 'To Grade']).size().reset_index(name='Count')
-                                    summary = summary.sort_values(['Count', 'Firm'], ascending=[False, True])
-                                    st.dataframe(summary, use_container_width=True, hide_index=True)
-                                    
-                                    # Optional: Bar chart of counts per grade (all firms)
+                                if not recent.empty and 'To Grade' in recent.columns:
                                     grade_counts = recent['To Grade'].value_counts()
                                     if not grade_counts.empty:
                                         import plotly.express as px
@@ -667,8 +662,11 @@ elif nav == "Stock Lookup":
                                             title="Recommendation Distribution (All Firms, Last 12 Months)"
                                         )
                                         st.plotly_chart(fig, use_container_width=True)
+                                        st.dataframe(grade_counts.rename_axis('Rating').reset_index(name='Count'), use_container_width=True, hide_index=True)
+                                    else:
+                                        st.info("No recent analyst ratings by grade available.")
                                 else:
-                                    st.info("No recent analyst ratings with both firm and grade information available.")
+                                    st.info("No recent analyst ratings by grade available.")
 
                                 # Show detailed table for recent recommendations (with highlighting)
                                 st.markdown("##### Detailed Recent Recommendations")
@@ -681,7 +679,6 @@ elif nav == "Stock Lookup":
                                     table = recommendations[display_cols].copy()
                                     table = table.head(30)
                                     table.index = table.index.strftime('%Y-%m-%d')
-                                    # Highlight upgrades/downgrades
                                     def highlight_action(val):
                                         if val == 'up': return 'background-color: #d4f7d4'
                                         if val == 'down': return 'background-color: #ffd6d6'
