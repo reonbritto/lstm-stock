@@ -642,11 +642,87 @@ elif nav == "Stock Lookup":
                         try:
                             recommendations = stock.recommendations
                             if recommendations is not None and not recommendations.empty:
-                                st.dataframe(recommendations.tail(10), use_container_width=True)
+                                st.subheader("Latest Analyst Ratings")
+                                
+                                # Convert index to DatetimeIndex if it's not already, for proper sorting and formatting
+                                if not isinstance(recommendations.index, pd.DatetimeIndex):
+                                    recommendations.index = pd.to_datetime(recommendations.index)
+                                
+                                # Sort by date descending to show latest first
+                                recommendations = recommendations.sort_index(ascending=False)
+                                
+                                # Display summary of recommendations
+                                if 'To Grade' in recommendations.columns:
+                                    st.markdown("##### Recommendation Summary (Last 12 Months)")
+                                    recent_recommendations = recommendations[recommendations.index > (datetime.now() - timedelta(days=365))]
+                                    if not recent_recommendations.empty:
+                                        grade_counts = recent_recommendations['To Grade'].value_counts()
+                                        
+                                        # Custom order for grades if needed, otherwise sort by count
+                                        grade_order = ['Strong Buy', 'Buy', 'Hold', 'Underperform', 'Sell', 'Strong Sell']
+                                        # Filter and reorder grade_counts based on grade_order
+                                        filtered_grade_counts = pd.Series(dtype='int')
+                                        for grade in grade_order:
+                                            if grade in grade_counts.index:
+                                                filtered_grade_counts[grade] = grade_counts[grade]
+                                        
+                                        # Add any grades not in grade_order but present in grade_counts
+                                        for grade in grade_counts.index:
+                                            if grade not in filtered_grade_counts.index:
+                                                filtered_grade_counts[grade] = grade_counts[grade]
+
+                                        if not filtered_grade_counts.empty:
+                                            # Display as a table
+                                            summary_df = pd.DataFrame(filtered_grade_counts).reset_index()
+                                            summary_df.columns = ['Recommendation', 'Count']
+                                            st.table(summary_df)
+
+                                            # Optional: Bar chart for visual summary
+                                            try:
+                                                import plotly.express as px
+                                                fig_rec_summary = px.bar(summary_df, x='Recommendation', y='Count', 
+                                                                         title="Recommendation Distribution (Last 12 Months)",
+                                                                         color='Recommendation',
+                                                                         labels={'Count': 'Number of Ratings'})
+                                                fig_rec_summary.update_layout(xaxis_title="Rating", yaxis_title="Count")
+                                                st.plotly_chart(fig_rec_summary, use_container_width=True)
+                                            except ImportError:
+                                                st.caption("Install plotly for a visual summary chart.")
+                                            except Exception as e:
+                                                st.caption(f"Could not generate recommendation chart: {e}")
+
+                                        else:
+                                            st.info("No 'To Grade' data found in recent recommendations to summarize.")
+                                    else:
+                                        st.info("No recommendations in the last 12 months to summarize.")
+                                else:
+                                    st.info("Recommendation data available, but 'To Grade' column is missing for summary.")
+
+                                st.markdown("##### Detailed Recommendations")
+                                # Select and rename columns for better readability
+                                display_cols = {
+                                    'Firm': 'Analyst Firm',
+                                    'To Grade': 'Rating',
+                                    'From Grade': 'Previous Rating',
+                                    'Action': 'Action'
+                                }
+                                # Filter columns that exist in the dataframe
+                                existing_display_cols = {k: v for k, v in display_cols.items() if k in recommendations.columns}
+                                
+                                if existing_display_cols:
+                                    recommendations_display = recommendations[list(existing_display_cols.keys())].copy()
+                                    recommendations_display.rename(columns=existing_display_cols, inplace=True)
+                                    # Format the date index
+                                    recommendations_display.index = recommendations_display.index.strftime('%Y-%m-%d')
+                                    st.dataframe(recommendations_display.head(20), use_container_width=True) # Show top 20
+                                else:
+                                    st.dataframe(recommendations.head(20), use_container_width=True)
+
+
                             else:
-                                st.info("Analyst recommendations unavailable")
-                        except Exception:
-                            st.info("Analyst recommendations unavailable")
+                                st.info("Analyst recommendations data unavailable for this stock.")
+                        except Exception as e:
+                            st.error(f"Could not fetch or display analyst recommendations: {e}")
                 
                 except Exception as e:
                     st.error(f"❌ Error fetching data for {lookup_ticker}: {str(e)}")
