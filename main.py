@@ -641,10 +641,18 @@ elif nav == "Stock Lookup":
                     # Earnings & Estimates
                     with st.expander("📅 Earnings & Estimates"):
                         try:
+                            # Yahoo API call with User-Agent header
                             url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{lookup_ticker}"
                             params = {"modules": "calendarEvents,earningsHistory"}
-                            resp = requests.get(url, params=params, timeout=5)
-                            data = resp.json().get("quoteSummary", {}).get("result", [{}])[0]
+                            headers = {"User-Agent": "Mozilla/5.0"}
+                            resp = requests.get(url, params=params, headers=headers, timeout=5)
+                            if resp.ok and resp.text.strip():
+                                try:
+                                    data = resp.json().get("quoteSummary", {}).get("result", [{}])[0]
+                                except ValueError:
+                                    data = {}
+                            else:
+                                data = {}
 
                             # Next earnings date
                             ce = data.get("calendarEvents", {}).get("earnings", {})
@@ -653,7 +661,12 @@ elif nav == "Stock Lookup":
                                 next_date = dates[0].get("fmt")
                                 st.metric("Next Earnings Date", next_date)
                             else:
-                                st.info("No upcoming earnings date available.")
+                                # fallback to yfinance info field
+                                info_date = stock.info.get("earningsDate")
+                                if isinstance(info_date, (list, tuple)) and info_date:
+                                    st.metric("Next Earnings Date", pd.to_datetime(info_date[0]).strftime("%Y-%m-%d"))
+                                else:
+                                    st.info("No upcoming earnings date available.")
 
                             # Historical earnings via API
                             hist = data.get("earningsHistory", {}).get("history", [])
@@ -668,11 +681,21 @@ elif nav == "Stock Lookup":
                                 fig_e = px.bar(
                                     df_e, x="date", y="actual",
                                     title="Earnings Actual (API)",
-                                    labels={"actual":"Actual EPS","date":"Date"}
+                                    labels={"actual": "Actual EPS", "date": "Date"}
                                 )
                                 st.plotly_chart(fig_e, use_container_width=True)
                             else:
-                                st.info("No historical earnings data available via API.")
+                                # fallback to yfinance earnings
+                                if hasattr(stock, "earnings") and not stock.earnings.empty:
+                                    st.subheader("Historical Earnings (yfinance)")
+                                    st.dataframe(stock.earnings.tail(8), use_container_width=True)
+                                    fig_y = px.bar(
+                                        stock.earnings.reset_index().rename(columns={'index':'Year','Earnings':'Earnings'}),
+                                        x="Year", y="Earnings", title="Annual Earnings (yfinance)"
+                                    )
+                                    st.plotly_chart(fig_y, use_container_width=True)
+                                else:
+                                    st.info("No historical earnings data available.")
 
                         except Exception as e:
                             st.error(f"Error fetching earnings data: {e}")
