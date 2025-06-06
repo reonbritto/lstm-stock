@@ -9,6 +9,10 @@ import numpy as np
 import ssl
 import time
 import os
+import requests
+from bs4 import BeautifulSoup
+import feedparser
+from urllib.parse import quote
 
 # SSL configuration
 try:
@@ -39,7 +43,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Navigation
-nav = st.sidebar.radio("🔀 Navigation", ["Stock Prediction", "Stock Lookup"])
+nav = st.sidebar.radio("🔀 Navigation", ["Stock Prediction", "Stock Lookup", "Market News"])
 
 if nav == "Stock Prediction":
     st.sidebar.header("🔧 Configuration")
@@ -627,3 +631,321 @@ elif nav == "Stock Lookup":
             if st.button(stock, key=f"popular_{stock}"):
                 st.session_state.lookup_ticker = stock
                 st.rerun()
+                
+elif nav == "Market News":
+    st.markdown('<h1 class="main-header">📰 Market News Center</h1>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <p style="font-size: 1.2rem; color: #666;">
+            Stay updated with the latest financial news and market insights
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # News source selection
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        news_category = st.selectbox(
+            "📺 Select News Category",
+            ["General Market", "Stock-Specific", "Crypto", "Economy", "Technology"],
+            help="Choose the type of news you want to see"
+        )
+        
+        if news_category == "Stock-Specific":
+            stock_symbol = st.text_input(
+                "Enter Stock Symbol",
+                value="AAPL",
+                placeholder="e.g., AAPL, GOOGL, TSLA"
+            ).upper().strip()
+        
+        fetch_news_button = st.button("📰 Get Latest News", type="primary", use_container_width=True)
+    
+    @st.cache_data(ttl=1800)  # Cache for 30 minutes
+    def scrape_yahoo_finance_news(category="general", symbol=None, max_articles=20):
+        """Scrape Yahoo Finance news"""
+        try:
+            articles = []
+            
+            if category == "Stock-Specific" and symbol:
+                # Get stock-specific news
+                ticker = yf.Ticker(symbol)
+                news_data = ticker.news
+                
+                for article in news_data[:max_articles]:
+                    articles.append({
+                        'title': article.get('title', 'No Title'),
+                        'summary': article.get('summary', 'No summary available'),
+                        'link': article.get('link', ''),
+                        'publisher': article.get('publisher', 'Unknown'),
+                        'publish_time': datetime.fromtimestamp(article.get('providerPublishTime', 0)),
+                        'category': f'{symbol} News',
+                        'thumbnail': article.get('thumbnail', {}).get('resolutions', [{}])[0].get('url', '')
+                    })
+            else:
+                # General market news using RSS feeds
+                rss_urls = {
+                    "General Market": "https://feeds.finance.yahoo.com/rss/2.0/headline",
+                    "Crypto": "https://feeds.finance.yahoo.com/rss/2.0/category-crypto",
+                    "Economy": "https://feeds.finance.yahoo.com/rss/2.0/category-economy",
+                    "Technology": "https://feeds.finance.yahoo.com/rss/2.0/category-technology"
+                }
+                
+                rss_url = rss_urls.get(category, rss_urls["General Market"])
+                feed = feedparser.parse(rss_url)
+                
+                for entry in feed.entries[:max_articles]:
+                    articles.append({
+                        'title': entry.get('title', 'No Title'),
+                        'summary': entry.get('summary', 'No summary available'),
+                        'link': entry.get('link', ''),
+                        'publisher': entry.get('source', {}).get('href', 'Yahoo Finance'),
+                        'publish_time': datetime(*entry.published_parsed[:6]) if hasattr(entry, 'published_parsed') else datetime.now(),
+                        'category': category,
+                        'thumbnail': ''
+                    })
+            
+            return articles, None
+            
+        except Exception as e:
+            return [], f"Error fetching news: {str(e)}"
+    
+    @st.cache_data(ttl=3600)  # Cache for 1 hour
+    def get_market_sentiment_from_news(articles):
+        """Analyze sentiment from news headlines"""
+        try:
+            from textblob import TextBlob
+            
+            sentiments = []
+            for article in articles:
+                text = f"{article['title']} {article['summary']}"
+                blob = TextBlob(text)
+                sentiment_score = blob.sentiment.polarity
+                
+                if sentiment_score > 0.1:
+                    sentiment = "Positive"
+                elif sentiment_score < -0.1:
+                    sentiment = "Negative"
+                else:
+                    sentiment = "Neutral"
+                
+                sentiments.append({
+                    'title': article['title'],
+                    'sentiment': sentiment,
+                    'score': sentiment_score
+                })
+            
+            return sentiments
+        except ImportError:
+            st.warning("TextBlob not installed. Install with: pip install textblob")
+            return []
+        except Exception as e:
+            st.error(f"Error analyzing sentiment: {str(e)}")
+            return []
+    
+    def display_news_card(article, index):
+        """Display individual news card with professional styling"""
+        with st.container():
+            # Calculate time ago
+            time_diff = datetime.now() - article['publish_time']
+            if time_diff.days > 0:
+                time_ago = f"{time_diff.days} days ago"
+            elif time_diff.seconds > 3600:
+                time_ago = f"{time_diff.seconds // 3600} hours ago"
+            else:
+                time_ago = f"{time_diff.seconds // 60} minutes ago"
+            
+            st.markdown(f"""
+            <div style="
+                border: 1px solid #e0e0e0;
+                border-radius: 15px;
+                padding: 1.5rem;
+                margin: 1rem 0;
+                background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+                box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+                transition: transform 0.3s ease;
+            " onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                    <h3 style="color: #2c3e50; margin: 0; font-size: 1.2rem; line-height: 1.4;">
+                        {article['title']}
+                    </h3>
+                    <span style="
++                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
++                        color: white;
++                        padding: 0.3rem 0.8rem;
++                        border-radius: 20px;
++                        font-size: 0.8rem;
++                        white-space: nowrap;
++                        margin-left: 1rem;
++                    ">
++                        {article['category']}
++                    </span>
++                </div>
++                
++                <p style="color: #6c757d; margin: 1rem 0; line-height: 1.6;">
++                    {article['summary'][:200]}{'...' if len(article['summary']) > 200 else ''}
++                </p>
++                
++                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
++                    <div style="display: flex; align-items: center; gap: 1rem;">
++                        <span style="color: #17a2b8; font-weight: 600;">📰 {article['publisher']}</span>
++                        <span style="color: #6c757d; font-size: 0.9rem;">🕒 {time_ago}</span>
++                    </div>
++                </div>
++            </div>
++            """, unsafe_allow_html=True)
++            
++            # Read more button
++            if article['link']:
++                col1, col2, col3 = st.columns([1, 1, 2])
++                with col1:
++                    if st.button("📖 Read Full Article", key=f"read_{index}"):
++                        st.markdown(f"[Open in new tab]({article['link']})")
++                with col2:
++                    if st.button("📤 Share", key=f"share_{index}"):
++                        st.code(article['link'])
++            
++            st.divider()
++    
+    if fetch_news_button:
+        with st.spinner("🔄 Fetching latest news..."):
+            if news_category == "Stock-Specific":
++                articles, error = scrape_yahoo_finance_news("Stock-Specific", stock_symbol)
+            else:
+                articles, error = scrape_yahoo_finance_news(news_category)
+            
+            if error:
+                st.error(f"❌ {error}")
+            elif articles:
+                st.success(f"✅ Found {len(articles)} latest articles")
+                
+                # Add sentiment analysis toggle
+                show_sentiment = st.checkbox("📊 Show Sentiment Analysis", value=False)
+                
+                if show_sentiment:
+                    sentiments = get_market_sentiment_from_news(articles)
+                    if sentiments:
+                        # Sentiment overview
+                        positive = len([s for s in sentiments if s['sentiment'] == 'Positive'])
+                        negative = len([s for s in sentiments if s['sentiment'] == 'Negative'])
+                        neutral = len([s for s in sentiments if s['sentiment'] == 'Neutral'])
+                        
+                        st.subheader("📈 News Sentiment Overview")
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            st.metric("Positive", positive, f"{positive/len(sentiments)*100:.1f}%")
+                        with col2:
+                            st.metric("Negative", negative, f"{negative/len(sentiments)*100:.1f}%")
+                        with col3:
+                            st.metric("Neutral", neutral, f"{neutral/len(sentiments)*100:.1f}%")
+                        with col4:
+                            avg_sentiment = sum([s['score'] for s in sentiments]) / len(sentiments)
+                            sentiment_label = "Bullish" if avg_sentiment > 0.1 else "Bearish" if avg_sentiment < -0.1 else "Mixed"
+                            st.metric("Overall", sentiment_label, f"{avg_sentiment:.3f}")
+                
+                # News filtering options
+                st.subheader("🔍 Filter & Sort")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    sort_by = st.selectbox("Sort by", ["Newest First", "Oldest First", "Publisher"])
+                with col2:
+                    articles_per_page = st.selectbox("Articles per page", [10, 20, 50], index=1)
+                with col3:
+                    publisher_filter = st.selectbox("Filter by Publisher", 
+                                                   ["All"] + list(set([a['publisher'] for a in articles])))
+                
+                # Apply filters
+                filtered_articles = articles
+                if publisher_filter != "All":
+                    filtered_articles = [a for a in articles if a['publisher'] == publisher_filter]
+                
+                # Sort articles
+                if sort_by == "Newest First":
+                    filtered_articles = sorted(filtered_articles, key=lambda x: x['publish_time'], reverse=True)
+                elif sort_by == "Oldest First":
+                    filtered_articles = sorted(filtered_articles, key=lambda x: x['publish_time'])
+                elif sort_by == "Publisher":
+                    filtered_articles = sorted(filtered_articles, key=lambda x: x['publisher'])
+                
+                # Pagination
+                total_articles = len(filtered_articles)
+                total_pages = (total_articles - 1) // articles_per_page + 1
+                
+                if total_pages > 1:
+                    page = st.selectbox(f"Page (Total: {total_pages})", list(range(1, total_pages + 1)))
+                    start_idx = (page - 1) * articles_per_page
+                    end_idx = start_idx + articles_per_page
+                    page_articles = filtered_articles[start_idx:end_idx]
+                else:
+                    page_articles = filtered_articles[:articles_per_page]
+                
+                # Display articles
+                st.subheader(f"📰 Latest {news_category} News")
+                st.caption(f"Showing {len(page_articles)} of {total_articles} articles")
+                
+                for i, article in enumerate(page_articles):
+                    display_news_card(article, i + (page - 1) * articles_per_page if total_pages > 1 else i)
+                
+                # Export options
+                if st.button("💾 Export News Data"):
+                    news_df = pd.DataFrame(articles)
+                    csv = news_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download as CSV",
+                        data=csv,
+                        file_name=f"market_news_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+            else:
+                st.warning("No news articles found. Try a different category or check your internet connection.")
+    
+    # Quick news categories
+    st.divider()
+    st.subheader("🔥 Quick Access")
+    st.caption("Click on any category to quickly fetch news")
+    
+    quick_categories = ["General Market", "Technology", "Crypto", "Economy"]
+    quick_cols = st.columns(len(quick_categories))
+    
+    for i, category in enumerate(quick_categories):
+        with quick_cols[i]:
+            if st.button(f"📰 {category}", key=f"quick_{category}"):
+                st.session_state.selected_category = category
+                st.rerun()
+    
+    # Market news widgets
+    st.divider()
+    st.subheader("📊 Market Overview Widget")
+    
+    try:
+        # Fetch major indices data
+        indices = {
+            "S&P 500": "^GSPC",
+            "NASDAQ": "^IXIC", 
+            "Dow Jones": "^DJI",
+            "VIX": "^VIX"
+        }
+        
+        widget_cols = st.columns(len(indices))
+        
+        for i, (name, symbol) in enumerate(indices.items()):
+            with widget_cols[i]:
+                try:
+                    ticker = yf.Ticker(symbol)
+                    data = ticker.history(period="2d")
+                    if not data.empty:
+                        current = data['Close'].iloc[-1]
+                        previous = data['Close'].iloc[-2] if len(data) > 1 else current
+                        change = current - previous
+                        change_pct = (change / previous) * 100 if previous != 0 else 0
+                        
+                        st.metric(
+                            label=name,
+                            value=f"{current:.2f}",
+                            delta=f"{change_pct:+.2f}%"
+                        )
+                except:
+                    st.metric(label=name, value="N/A")
+    except:
+        st.info("Market overview widget temporarily unavailable")
