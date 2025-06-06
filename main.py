@@ -769,47 +769,47 @@ elif nav == "Market News":
                         {article['title']}
                     </h3>
                     <span style="
-+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-+                        color: white;
-+                        padding: 0.3rem 0.8rem;
-+                        border-radius: 20px;
-+                        font-size: 0.8rem;
-+                        white-space: nowrap;
-+                        margin-left: 1rem;
-+                    ">
-+                        {article['category']}
-+                    </span>
-+                </div>
-+                
-+                <p style="color: #6c757d; margin: 1rem 0; line-height: 1.6;">
-+                    {article['summary'][:200]}{'...' if len(article['summary']) > 200 else ''}
-+                </p>
-+                
-+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
-+                    <div style="display: flex; align-items: center; gap: 1rem;">
-+                        <span style="color: #17a2b8; font-weight: 600;">📰 {article['publisher']}</span>
-+                        <span style="color: #6c757d; font-size: 0.9rem;">🕒 {time_ago}</span>
-+                    </div>
-+                </div>
-+            </div>
-+            """, unsafe_allow_html=True)
-+            
-+            # Read more button
-+            if article['link']:
-+                col1, col2, col3 = st.columns([1, 1, 2])
-+                with col1:
-+                    if st.button("📖 Read Full Article", key=f"read_{index}"):
-+                        st.markdown(f"[Open in new tab]({article['link']})")
-+                with col2:
-+                    if st.button("📤 Share", key=f"share_{index}"):
-+                        st.code(article['link'])
-+            
-+            st.divider()
-+    
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        padding: 0.3rem 0.8rem;
+                        border-radius: 20px;
+                        font-size: 0.8rem;
+                        white-space: nowrap;
+                        margin-left: 1rem;
+                    ">
+                        {article['category']}
+                    </span>
+                </div>
+                
+                <p style="color: #6c757d; margin: 1rem 0; line-height: 1.6;">
+                    {article['summary'][:200]}{'...' if len(article['summary']) > 200 else ''}
+                </p>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <span style="color: #17a2b8; font-weight: 600;">📰 {article['publisher']}</span>
+                        <span style="color: #6c757d; font-size: 0.9rem;">🕒 {time_ago}</span>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Read more button
+            if article['link']:
+                col1, col2, col3 = st.columns([1, 1, 2])
+                with col1:
+                    if st.button("📖 Read Full Article", key=f"read_{index}"):
+                        st.markdown(f"[Open in new tab]({article['link']})")
+                with col2:
+                    if st.button("📤 Share", key=f"share_{index}"):
+                        st.code(article['link'])
+            
+            st.divider()
+    
     if fetch_news_button:
         with st.spinner("🔄 Fetching latest news..."):
             if news_category == "Stock-Specific":
-+                articles, error = scrape_yahoo_finance_news("Stock-Specific", stock_symbol)
+                articles, error = scrape_yahoo_finance_news("Stock-Specific", stock_symbol)
             else:
                 articles, error = scrape_yahoo_finance_news(news_category)
             
