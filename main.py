@@ -637,47 +637,33 @@ elif nav == "Stock Lookup":
                                 st.info("Institutional holdings data unavailable")
                         except Exception:
                             st.info("Institutional holdings data unavailable")
-                
-                    # Recommendations
-                    with st.expander("📈 Peer Comparison"):
-                        try:
-                            st.subheader("Compare With Peers")
-                            sector = info.get("sector", None)
-                            industry = info.get("industry", None)
-                            if not sector or not industry:
-                                st.info("Peer comparison unavailable: sector or industry info missing.")
-                            else:
-                                # Get tickers from the same industry (limited to top 5 by market cap)
-                                all_tickers = yf.Tickers(' '.join([
-                                    "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "NFLX", "JPM", "V", "UNH", "HD", "PG", "DIS", "MA", "BAC", "PFE", "KO", "PEP", "CSCO"
-                                ]))
-                                peer_data = []
-                                for tkr in all_tickers.tickers:
-                                    try:
-                                        peer_info = tkr.info
-                                        if peer_info.get("industry") == industry and peer_info.get("symbol") != lookup_ticker:
-                                            peer_data.append({
-                                                "Symbol": peer_info.get("symbol"),
-                                                "Name": peer_info.get("shortName", ""),
-                                                "Market Cap": peer_info.get("marketCap", 0),
-                                                "Price": peer_info.get("currentPrice", None),
-                                                "P/E": peer_info.get("trailingPE", None),
-                                                "Sector": peer_info.get("sector", ""),
-                                                "Industry": peer_info.get("industry", "")
-                                            })
-                                    except Exception:
-                                        continue
-                                peer_df = pd.DataFrame(peer_data)
-                                if not peer_df.empty:
-                                    peer_df = peer_df.sort_values("Market Cap", ascending=False).head(5)
-                                    st.dataframe(peer_df[["Symbol", "Name", "Market Cap", "Price", "P/E"]], use_container_width=True)
-                                    # Simple bar chart for market cap
-                                    fig = px.bar(peer_df, x="Symbol", y="Market Cap", hover_name="Name", title="Top Peers by Market Cap")
-                                    st.plotly_chart(fig, use_container_width=True)
-                                else:
-                                    st.info("No peer companies found in the same industry among major tickers.")
-                        except Exception as e:
-                            st.error(f"Could not fetch peer comparison: {e}")
+                    
+                    # Earnings & Estimates
+                    with st.expander("📅 Earnings & Estimates"):
+                        # Historical earnings
+                        earnings = stock.earnings
+                        if earnings is not None and not earnings.empty:
+                            st.subheader("Historical Earnings (Annual)")
+                            st.dataframe(earnings.tail(8), use_container_width=True)
+                            fig = px.bar(
+                                earnings.reset_index().rename(columns={'index': 'Year', 'Earnings': 'Earnings'}),
+                                x='Year', y='Earnings',
+                                title="Annual Earnings Over Time",
+                                color_discrete_sequence=["#1f77b4"]
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("No historical earnings data available.")
+                        
+                        # Next earnings date
+                        calendar = stock.calendar
+                        if hasattr(calendar, 'empty') and not calendar.empty and 'Earnings Date' in calendar.index:
+                            next_date = calendar.loc['Earnings Date'][0]
+                            if isinstance(next_date, (list, tuple)):
+                                next_date = next_date[0]
+                            st.metric("Next Earnings Date", pd.to_datetime(next_date).strftime("%Y-%m-%d"))
+                        else:
+                            st.info("No upcoming earnings date available.")
                 
                 except Exception as e:
                     st.error(f"❌ Error fetching data for {lookup_ticker}: {str(e)}")
