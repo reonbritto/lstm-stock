@@ -29,70 +29,22 @@ def set_seeds(seed=42):
     sess = tf.compat.v1.Session(config=session_conf)
     tf.compat.v1.keras.backend.set_session(sess)
 
-def analyze_sentiment_integration(df, sentiment_scores=None):
-    """Integrate sentiment analysis into stock prediction model"""
-    if sentiment_scores is not None:
-        # Add sentiment as a feature
-        df = df.copy()
-        df['Sentiment_Score'] = sentiment_scores
-        df['Sentiment_MA'] = df['Sentiment_Score'].rolling(window=5).mean()
-        df = df.fillna(method='ffill').fillna(method='bfill')
-    return df
-
 def calculate_features(df):
     df = df.copy()
     df['Return'] = df['Close'].pct_change()
     df['Volatility'] = df['Close'].rolling(window=10).std()
     df['MA_20'] = df['Close'].rolling(window=20).mean()
     df['EMA_20'] = df['Close'].ewm(span=20).mean()
-    df['EMA_50'] = df['Close'].ewm(span=50).mean()
-    df['EMA_200'] = df['Close'].ewm(span=200).mean()
-    
-    # Enhanced technical indicators
     macd = ta.macd(df['Close'], fast=12, slow=26, signal=9)
     df['MACD'] = macd['MACD_12_26_9']
     df['MACDs'] = macd['MACDs_12_26_9']
     df['RSI'] = ta.rsi(df['Close'], length=14)
-    
-    # Bollinger Bands
-    bb = ta.bbands(df['Close'], length=20)
-    df['BB_Upper'] = bb['BBU_20_2.0']
-    df['BB_Lower'] = bb['BBL_20_2.0']
-    df['BB_Width'] = (df['BB_Upper'] - df['BB_Lower']) / df['Close']
-    
-    # Stochastic Oscillator
-    stoch = ta.stoch(df['High'], df['Low'], df['Close'])
-    df['Stoch_K'] = stoch['STOCHk_14_3_3']
-    df['Stoch_D'] = stoch['STOCHd_14_3_3']
-    
-    # Volume indicators
-    df['Volume_SMA'] = df['Volume'].rolling(window=20).mean()
-    df['Volume_Ratio'] = df['Volume'] / df['Volume_SMA']
-    
     df = df.fillna(method='ffill').fillna(method='bfill')
     return df
 
-def build_enhanced_lstm_model(input_shape):
-    """Enhanced LSTM model with better architecture"""
-    model = Sequential()
-    model.add(LSTM(128, input_shape=input_shape, return_sequences=True))
-    model.add(Dropout(0.3))
-    model.add(LSTM(64, return_sequences=False))
-    model.add(Dropout(0.2))
-    model.add(Dense(50, activation='relu'))
-    model.add(Dropout(0.1))
-    model.add(Dense(25, activation='relu'))
-    model.add(Dense(1))
-    
-    # Use adaptive learning rate
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001, decay=1e-6)
-    model.compile(optimizer=optimizer, loss='huber', metrics=['mae'])
-    return model
-
 def prepare_data_simple(df, time_steps=60):
     df_features = calculate_features(df)
-    features_list = ['Close', 'Return', 'Volatility', 'MA_20', 'EMA_20', 'EMA_50', 'EMA_200',
-                     'MACD', 'MACDs', 'RSI', 'BB_Width', 'Stoch_K', 'Stoch_D', 'Volume_Ratio']
+    features_list = ['Close', 'Return', 'Volatility', 'MA_20', 'EMA_20', 'MACD', 'MACDs', 'RSI']
     features_data = df_features[features_list].values
     scaler = RobustScaler()
     scaled = scaler.fit_transform(features_data)
@@ -103,13 +55,14 @@ def prepare_data_simple(df, time_steps=60):
         y.append(scaled[i, 0])
     return np.array(X), np.array(y), scaler, features_list
 
-def create_model_ensemble(input_shape, n_models=3):
-    """Create an ensemble of models for better predictions"""
-    models = []
-    for i in range(n_models):
-        model = build_enhanced_lstm_model(input_shape)
-        models.append(model)
-    return models
+def build_simple_lstm_model(input_shape):
+    model = Sequential()
+    model.add(LSTM(64, input_shape=input_shape, return_sequences=False))
+    model.add(Dropout(0.2))
+    model.add(Dense(32, activation='relu'))
+    model.add(Dense(1))
+    model.compile(optimizer='adam', loss='mse')
+    return model
 
 def train_and_evaluate(df, time_steps=60):
     X, y, scaler, features_list = prepare_data_simple(df, time_steps)
@@ -117,13 +70,11 @@ def train_and_evaluate(df, time_steps=60):
     X_train, X_test = X[:split], X[split:]
     y_train, y_test = y[:split], y[split:]
 
-    model = build_enhanced_lstm_model((X.shape[1], X.shape[2]))
-    early_stop = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True, min_delta=0.001)
-    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, min_lr=0.0001)
+    model = build_simple_lstm_model((X.shape[1], X.shape[2]))
+    early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
-    history = model.fit(X_train, y_train, epochs=100, batch_size=64, 
-                        validation_data=(X_test, y_test), 
-                        callbacks=[early_stop, reduce_lr], verbose=0)
+    history = model.fit(X_train, y_train, epochs=50, batch_size=32, 
+                        validation_data=(X_test, y_test), callbacks=[early_stop], verbose=0)
 
     preds = model.predict(X_test, verbose=0)
     actual = y_test
@@ -139,8 +90,7 @@ def train_and_evaluate(df, time_steps=60):
 
 def predict_next_days(df, model, scaler, days=10, time_steps=60):
     df = df.copy()
-    features_list = ['Close', 'Return', 'Volatility', 'MA_20', 'EMA_20', 'EMA_50', 'EMA_200',
-                     'MACD', 'MACDs', 'RSI', 'BB_Width', 'Stoch_K', 'Stoch_D', 'Volume_Ratio']
+    features_list = ['Close', 'Return', 'Volatility', 'MA_20', 'EMA_20', 'MACD', 'MACDs', 'RSI']
     
     df_features = calculate_features(df)
     features_data = df_features[features_list].values
@@ -245,22 +195,3 @@ def train_lstm_model(df, time_steps=60):
     # After training, save the model
     save_trained_model(model, scaler, feature_columns)
     return model, scaler, X_test, y_test, df_clean, feature_columns, history
-
-def get_model_confidence(model, X_test, predictions):
-    """Calculate model confidence based on prediction variance"""
-    # Use model uncertainty estimation
-    prediction_std = np.std(predictions)
-    confidence = max(0, min(1, 1 - (prediction_std / np.mean(np.abs(predictions)))))
-    return confidence
-
-def validate_model_performance(metrics):
-    """Validate if model performance meets minimum standards"""
-    min_r2 = 0.5
-    max_mape = 15.0
-    
-    if metrics['r2'] < min_r2:
-        return False, f"R² too low: {metrics['r2']:.3f} < {min_r2}"
-    if metrics['mape'] > max_mape:
-        return False, f"MAPE too high: {metrics['mape']:.1f}% > {max_mape}%"
-    
-    return True, "Model performance acceptable"
