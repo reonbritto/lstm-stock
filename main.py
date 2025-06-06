@@ -11,7 +11,6 @@ import time
 import os
 import requests
 import feedparser
-import plotly.express as px # Add this import
 
 # SSL configuration
 try:
@@ -467,7 +466,7 @@ elif nav == "Stock Lookup":
                         beta = info.get('beta')
                         
                         st.metric("P/E Ratio", f"{pe_ratio:.2f}" if pe_ratio else "N/A")
-                        st.metric("Dividend Yield", f"{dividend_yield*100:.2f}%" if dividend_yield else "N/A")   
+                        st.metric("Dividend Yield", f"{dividend_yield}%" if dividend_yield else "N/A")   
                         st.metric("Beta", f"{beta:.2f}" if beta else "N/A")
                 
                     # Company Information
@@ -641,123 +640,62 @@ elif nav == "Stock Lookup":
                     # Recommendations
                     with st.expander("🎯 Analyst Recommendations"):
                         try:
-                            recommendations_data_available = False
-                            summary_created = False
-
-                            # Attempt 1: Use recommendations_summary for a direct summary
-                            st.subheader("Analyst Rating Summary")
-                            try:
-                                rec_summary_df = stock.recommendations_summary
-                                if rec_summary_df is not None and not rec_summary_df.empty:
-                                    # Use the most recent period (usually '0m')
-                                    current_summary = rec_summary_df[rec_summary_df['period'] == '0m'].iloc[0]
-                                    
-                                    summary_grade_map = {
-                                        'strongBuy': 'Strong Buy', 'buy': 'Buy', 
-                                        'hold': 'Hold', 'sell': 'Sell', 'strongSell': 'Strong Sell'
-                                    }
-                                    
-                                    summary_counts = {}
-                                    for api_grade, display_grade in summary_grade_map.items():
-                                        if api_grade in current_summary and current_summary[api_grade] > 0:
-                                            summary_counts[display_grade] = current_summary[api_grade]
-                                    
-                                    if summary_counts:
-                                        summary_df_for_display = pd.DataFrame(list(summary_counts.items()), columns=['Recommendation', 'Count'])
-                                        st.table(summary_df_for_display)
-
-                                        fig_rec_summary = px.bar(summary_df_for_display, x='Recommendation', y='Count',
-                                                                 title="Current Analyst Recommendation Distribution",
-                                                                 color='Recommendation',
-                                                                 labels={'Count': 'Number of Ratings'},
-                                                                 category_orders={"Recommendation": list(summary_grade_map.values())}) # Ensure order
-                                        fig_rec_summary.update_layout(xaxis_title="Rating", yaxis_title="Count")
-                                        st.plotly_chart(fig_rec_summary, use_container_width=True)
-                                        summary_created = True
-                                        recommendations_data_available = True # Mark that some form of rec data was found
-                            except Exception as e_summary:
-                                st.caption(f"Could not generate summary from stock.recommendations_summary: {e_summary}")
-
-                            # Attempt 2: Fallback to parsing historical recommendations if direct summary failed
-                            recommendations = stock.recommendations # Fetch historical data regardless for detailed view
-                            
-                            if recommendations is not None and not recommendations.empty:
-                                recommendations_data_available = True # Mark that some form of rec data was found
-                                if not isinstance(recommendations.index, pd.DatetimeIndex):
-                                    recommendations.index = pd.to_datetime(recommendations.index)
-                                recommendations = recommendations.sort_index(ascending=False)
-
-                                if not summary_created and 'To Grade' in recommendations.columns:
-                                    st.markdown("##### Recommendation Summary (Based on Last 12 Months of Historical Data)")
-                                    recent_recommendations = recommendations[recommendations.index > (datetime.now() - timedelta(days=365))]
-                                    if not recent_recommendations.empty:
-                                        grade_counts = recent_recommendations['To Grade'].value_counts()
-                                        
-                                        grade_order = ['Strong Buy', 'Buy', 'Hold', 'Underperform', 'Sell', 'Strong Sell']
-                                        filtered_grade_counts = pd.Series(dtype='int')
-                                        for grade in grade_order:
-                                            if grade in grade_counts.index:
-                                                filtered_grade_counts[grade] = grade_counts[grade]
-                                        for grade in grade_counts.index: # Add any other grades
-                                            if grade not in filtered_grade_counts.index:
-                                                filtered_grade_counts[grade] = grade_counts[grade]
-
-                                        if not filtered_grade_counts.empty:
-                                            summary_df_hist = pd.DataFrame(filtered_grade_counts).reset_index()
-                                            summary_df_hist.columns = ['Recommendation', 'Count']
-                                            st.table(summary_df_hist)
-                                            
-                                            fig_rec_summary_hist = px.bar(summary_df_hist, x='Recommendation', y='Count',
-                                                                          title="Recommendation Distribution (Last 12 Months - Historical)",
-                                                                          color='Recommendation',
-                                                                          labels={'Count': 'Number of Ratings'},
-                                                                          category_orders={"Recommendation": grade_order})
-                                            fig_rec_summary_hist.update_layout(xaxis_title="Rating", yaxis_title="Count")
-                                            st.plotly_chart(fig_rec_summary_hist, use_container_width=True)
-                                            summary_created = True
-                                        else:
-                                            st.info("No 'To Grade' data found in recent historical recommendations to summarize.")
-                                    else:
-                                        st.info("No historical recommendations in the last 12 months to summarize.")
-                                elif not summary_created:
-                                     st.info("Could not generate a summary chart. 'To Grade' column might be missing in historical data or direct summary failed.")
-
-
-                                # Detailed Historical Recommendations Table
-                                st.markdown("##### Detailed Historical Recommendations by Firm") # Updated subheading
-                                
-                                # Define desired column order, with 'Firm' first
-                                desired_cols_in_order = ['Firm', 'To Grade', 'From Grade', 'Action']
-                                display_cols_map = {
-                                    'Firm': 'Analyst Firm',
-                                    'To Grade': 'Rating',
-                                    'From Grade': 'Previous Rating',
-                                    'Action': 'Action'
+                            rec_df = stock.recommendations
+                            if rec_df is not None and not rec_df.empty:
+                                # Map textual ratings to numeric scores
+                                rating_map = {
+                                    "Strong Buy": 2,
+                                    "Buy": 1,
+                                    "Hold": 0,
+                                    "Underperform": -1,
+                                    "Sell": -1,
+                                    "Strong Sell": -2
                                 }
-
-                                # Filter to columns that actually exist in recommendations.columns, maintaining desired order
-                                available_display_cols = [col for col in desired_cols_in_order if col in recommendations.columns]
+                                rec_df = rec_df.copy()
+                                rec_df['score'] = rec_df['To Grade'].map(rating_map).fillna(0)
                                 
-                                if available_display_cols:
-                                    recommendations_display = recommendations[available_display_cols].copy()
-                                    # Rename columns for display
-                                    renamed_cols_map = {col: display_cols_map[col] for col in available_display_cols if col in display_cols_map}
-                                    recommendations_display.rename(columns=renamed_cols_map, inplace=True)
-                                    
-                                    recommendations_display.index = recommendations_display.index.strftime('%Y-%m-%d')
-                                    st.dataframe(recommendations_display.head(20), use_container_width=True)
-                                else: 
-                                    # Fallback if specific columns are not found, display raw data but still format index
-                                    st.caption("Displaying raw historical recommendations data as standard columns (e.g., Firm, Rating) were not found.")
-                                    recommendations_display_raw = recommendations.copy()
-                                    recommendations_display_raw.index = recommendations_display_raw.index.strftime('%Y-%m-%d')
-                                    st.dataframe(recommendations_display_raw.head(20), use_container_width=True)
-                            
-                            if not recommendations_data_available:
-                                st.info("Analyst recommendations data unavailable for this stock.")
-
+                                # Compute overall sentiment
+                                avg_score = rec_df['score'].mean()
+                                sentiment_label = (
+                                    "Bullish" if avg_score > 0.5
+                                    else "Bearish" if avg_score < -0.5
+                                    else "Neutral"
+                                )
+                                st.metric(
+                                    label="Overall Analyst Sentiment",
+                                    value=sentiment_label,
+                                    delta=f"{avg_score:.2f}"
+                                )
+                                
+                                # Distribution of ratings
+                                counts = rec_df['To Grade'].value_counts().reset_index()
+                                counts.columns = ['Rating', 'Count']
+                                fig = px.bar(
+                                    counts, x='Rating', y='Count',
+                                    color='Rating',
+                                    category_orders={'Rating': list(rating_map.keys())},
+                                    title="Ratings Distribution"
+                                )
+                                fig.update_layout(xaxis_title="", yaxis_title="Number of Ratings")
+                                st.plotly_chart(fig, use_container_width=True)
+                                
+                                # Detailed recent recommendations
+                                st.markdown("**Recent Analyst Actions**")
+                                display_cols = ['Firm', 'To Grade', 'From Grade', 'Action']
+                                available = [c for c in display_cols if c in rec_df.columns]
+                                table = rec_df[available].head(10).copy()
+                                table.index = table.index.strftime('%Y-%m-%d')
+                                table.rename(columns={
+                                    'Firm': 'Analyst Firm',
+                                    'To Grade': 'New Rating',
+                                    'From Grade': 'Old Rating',
+                                    'Action': 'Action Taken'
+                                }, inplace=True)
+                                st.dataframe(table, use_container_width=True)
+                            else:
+                                st.info("🎯 No analyst recommendations available for this stock.")
                         except Exception as e:
-                            st.error(f"Could not fetch or display analyst recommendations: {e}")
+                            st.error(f"Unable to load recommendations: {e}")
                 
                 except Exception as e:
                     st.error(f"❌ Error fetching data for {lookup_ticker}: {str(e)}")
