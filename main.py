@@ -567,26 +567,82 @@ elif nav == "Stock Lookup":
                     # News (if available)
                     with st.expander("📰 Recent News"):
                         try:
-                            news = stock.news
-                            if news:
-                                st.subheader("Latest News Headlines")
-                                for i, article in enumerate(news[:10], 1):  # Show top 10 news
-                                    title = article.get('title', 'N/A')
-                                    publisher = article.get('publisher', 'N/A')
-                                    published_time = article.get('providerPublishTime', None)
-                                    link = article.get('link', '')
-                                    summary = article.get('summary', '')
-                                    st.write(f"**{i}. {title}**")
-                                    st.write(f"*Source: {publisher}*")
-                                    if summary:
-                                        st.caption(summary[:200] + ("..." if len(summary) > 200 else ""))
-                                    if link:
-                                        st.markdown(f"[Read Full Article]({link})")
-                                    st.divider()
-                            else:
-                                st.info("No recent news available")
+                            with st.spinner("Fetching all latest news articles..."):
+                                news = stock.news
+                                if news:
+                                    st.subheader(f"Latest Headlines for {info.get('longName', lookup_ticker)}")
+                                    
+                                    # Display news count and date range
+                                    if len(news) > 0:
+                                        try:
+                                            oldest = min([article.get('providerPublishTime') for article in news if article.get('providerPublishTime')])
+                                            newest = max([article.get('providerPublishTime') for article in news if article.get('providerPublishTime')])
+                                            oldest_date = datetime.fromtimestamp(oldest).strftime('%Y-%m-%d')
+                                            newest_date = datetime.fromtimestamp(newest).strftime('%Y-%m-%d')
+                                            st.caption(f"Showing all {len(news)} available articles • {oldest_date} to {newest_date}")
+                                        except:
+                                            st.caption(f"Showing all {len(news)} available articles")
+                                    
+                                    # Add filtering options
+                                    if len(news) > 5:
+                                        sort_option = st.radio(
+                                            "Sort articles by:",
+                                            ["Newest first", "Oldest first"],
+                                            horizontal=True,
+                                            key=f"sort_news_{lookup_ticker}"
+                                        )
+                                        
+                                        if sort_option == "Newest first":
+                                            # Sort by newest first (default from Yahoo)
+                                            sorted_news = sorted(
+                                                news, 
+                                                key=lambda x: x.get('providerPublishTime', 0),
+                                                reverse=True
+                                            )
+                                        else:
+                                            # Sort by oldest first
+                                            sorted_news = sorted(
+                                                news,
+                                                key=lambda x: x.get('providerPublishTime', 0)
+                                            )
+                                    else:
+                                        sorted_news = news
+                                    
+                                    # Use tabs if there are many articles
+                                    if len(sorted_news) > 10:
+                                        tab_groups = ["Latest (1-10)"]
+                                        if len(sorted_news) > 10:
+                                            tab_groups.append(f"More ({11}-{len(sorted_news)})")
+                                            
+                                        tabs = st.tabs(tab_groups)
+                                        
+                                        # First 10 articles in first tab
+                                        with tabs[0]:
+                                            for i, article in enumerate(sorted_news[:10], 1):
+                                                _display_article(article, i)
+                                        
+                                        # Remaining articles in second tab
+                                        if len(sorted_news) > 10:
+                                            with tabs[1]:
+                                                for i, article in enumerate(sorted_news[10:], 11):
+                                                    _display_article(article, i)
+                                    else:
+                                        # Show all articles directly when fewer than 10
+                                        for i, article in enumerate(sorted_news, 1):
+                                            _display_article(article, i)
+                                
+                                else:
+                                    st.info("No recent news available for this stock.")
+                                    st.write("Try another source for news like:")
+                                    st.markdown("- [Yahoo Finance](https://finance.yahoo.com/quote/" + lookup_ticker + ")")
+                                    st.markdown("- [CNBC](https://www.cnbc.com/quotes/" + lookup_ticker + ")")
+                                    st.markdown("- [MarketWatch](https://www.marketwatch.com/investing/stock/" + lookup_ticker + ")")
                         except Exception as news_error:
-                            st.info("News data unavailable")
+                            st.info(f"News data unavailable. Error: {str(news_error)}")
+                            st.write("Try checking these financial news sources:")
+                            st.markdown("- [Yahoo Finance](https://finance.yahoo.com/quote/" + lookup_ticker + ")")
+                            st.markdown("- [CNBC](https://www.cnbc.com/quotes/" + lookup_ticker + ")")
+                            st.markdown("- [MarketWatch](https://www.marketwatch.com/investing/stock/" + lookup_ticker + ")")
                 
                     # Institutional Holdings
                     with st.expander("🏛️ Institutional Holdings"):
@@ -631,3 +687,42 @@ elif nav == "Stock Lookup":
             if st.button(stock, key=f"popular_{stock}"):
                 st.session_state.lookup_ticker = stock
                 st.rerun()
+
+def _display_article(article, index):
+    """Helper function to display a news article consistently"""
+    # Get article data
+    title = article.get('title', 'N/A')
+    publisher = article.get('publisher', 'Unknown Source')
+    link = article.get('link', '')
+    summary = article.get('summary', '')
+    publish_time = article.get('providerPublishTime')
+                                            
+    # Format date if available
+    date_str = ""
+    if publish_time:
+        date_str = datetime.fromtimestamp(publish_time).strftime('%b %d, %Y')
+                                                
+    # Article card
+    st.markdown(f"### {index}. {title}")
+                                            
+    # Publication info
+    pub_col1, pub_col2 = st.columns([3, 1])
+    with pub_col1:
+        st.markdown(f"**Source:** {publisher} {f' • {date_str}' if date_str else ''}")
+    with pub_col2:
+        if link:
+            st.link_button("📰 Read Full Article", link)
+                                            
+    # Summary if available
+    if summary and len(summary) > 10:  # Avoid empty or very short summaries
+        st.markdown(f"**Summary:** {summary[:300]}..." if len(summary) > 300 else f"**Summary:** {summary}")
+                                            
+    # Add image if available
+    if article.get('thumbnail') and article.get('thumbnail', {}).get('resolutions'):
+        try:
+            img_url = article['thumbnail']['resolutions'][0]['url']
+            st.image(img_url, width=250)
+        except:
+            pass
+                                                
+    st.divider()
