@@ -10,6 +10,7 @@ import ssl
 import time
 import os
 import requests
+import feedparser
 
 # SSL configuration
 try:
@@ -565,95 +566,30 @@ elif nav == "Stock Lookup":
                         else:
                             st.warning("No historical data available for chart.")
                 
-                    # News (via Yahoo Finance search API)
+                    # News (via Yahoo Finance RSS)
                     with st.expander("📰 Recent News"):
-                        try:
-                            # Try multiple news sources
-                            news_items = []
-                            
-                            # First try: Yahoo Finance search API
-                            try:
-                                # Try yfinance news first
-                                stock_news = stock.news
-                                if stock_news:
-                                    news_items = stock_news
-                            except:
-                                pass
-                            
-                            # If no news from yfinance, try Yahoo Finance API
-                            if not news_items:
-                                try:
-                                    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={lookup_ticker}&quotesCount=0&newsCount=20"
-                                    headers = {
-                                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                                    }
-                                    resp = requests.get(url, headers=headers, timeout=10)
-                                    if resp.status_code == 200:
-                                        data = resp.json()
-                                        news_items = data.get("news", [])
-                                except:
-                                    pass
-                            
-                            # If still no news, try alternative endpoint
-                            if not news_items:
-                                try:
-                                    alt_url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={lookup_ticker}&region=US&lang=en-US"
-                                    resp = requests.get(alt_url, timeout=10)
-                                    # This would need XML parsing, skip for now
-                                except:
-                                    pass
-
-                            if news_items:
-                                st.subheader(f"📰 Latest News for {lookup_ticker}")
-                                st.caption(f"Found {len(news_items)} news articles")
-                                for idx, item in enumerate(news_items, 1):
-                                    title = item.get("title", "N/A")
-                                    link = item.get("link", "")
-                                    publisher = item.get("publisher", "Unknown")
-                                    
-                                    # Handle different timestamp formats
-                                    pub_ts = item.get("providerPublishTime") or item.get("publish_time")
-                                    if pub_ts:
-                                        try:
-                                            if isinstance(pub_ts, str):
-                                                # Try parsing ISO format
-                                                from datetime import datetime as dt
-                                                date_obj = dt.fromisoformat(pub_ts.replace('Z', '+00:00'))
-                                                date_str = date_obj.strftime("%b %d, %Y")
-                                            else:
-                                                date_str = datetime.fromtimestamp(pub_ts).strftime("%b %d, %Y")
-                                        except:
-                                            date_str = "Recent"
-                                    else:
-                                        date_str = "Recent"
-                                    
-                                    st.markdown(f"**{idx}. {title}**")
-                                    st.write(f"*{publisher} • {date_str}*")
-                                    if link:
-                                        st.link_button("📖 Read Article", link, key=f"news_{idx}")
-                                    summary = item.get("summary") or item.get("snippet", "")
-                                    if summary:
-                                        st.write(f"**Summary:** {summary[:200]}...")
-                                    
-                                    # Add thumbnail if available
-                                    if item.get('thumbnail') and item.get('thumbnail', {}).get('resolutions'):
-                                        try:
-                                            img_url = item['thumbnail']['resolutions'][0]['url']
-                                            st.image(img_url, width=200)
-                                        except:
-                                            pass
-                                    st.divider()
-                            else:
-                                st.info("📰 No recent news found for this ticker.")
-                                st.markdown("**Alternative news sources:**")
-                                st.markdown(f"- [Yahoo Finance News](https://finance.yahoo.com/quote/{lookup_ticker}/news)")
-                                st.markdown(f"- [MarketWatch](https://www.marketwatch.com/investing/stock/{lookup_ticker})")
-                                st.markdown(f"- [Seeking Alpha](https://seekingalpha.com/symbol/{lookup_ticker}/news)")
-                        except Exception as e:
-                            st.warning("Unable to fetch news at this time.")
-                            st.markdown("**Try these news sources:**")
-                            st.markdown(f"- [Yahoo Finance](https://finance.yahoo.com/quote/{lookup_ticker}/news)")
-                            st.markdown(f"- [CNBC](https://www.cnbc.com/quotes/{lookup_ticker})")
+                        feed_url = (
+                            f"https://feeds.finance.yahoo.com/rss/2.0/headline"
+                            f"?s={lookup_ticker}&region=US&lang=en-US"
+                        )
+                        feed = feedparser.parse(feed_url)
+                        entries = feed.entries or []
+                        if entries:
+                            st.subheader(f"Latest {len(entries)} Articles for {lookup_ticker}")
+                            for i, e in enumerate(entries, 1):
+                                title = e.get("title", "N/A")
+                                link  = e.get("link", "")
+                                date  = e.get("published", "")
+                                summary = e.get("summary", "")
+                                st.markdown(f"**{i}. {title}**")
+                                st.write(f"*{date}*")
+                                if link:
+                                    st.markdown(f"[Read full article]({link})")
+                                if summary:
+                                    st.write(summary[:200] + ("..." if len(summary) > 200 else ""))
+                                st.divider()
+                        else:
+                            st.info(f"No recent RSS news found for {lookup_ticker}.")
                 
                     # Institutional Holdings
                     with st.expander("🏛️ Institutional Holdings"):
