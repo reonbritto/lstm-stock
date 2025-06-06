@@ -641,16 +641,22 @@ elif nav == "Stock Lookup":
                     with st.expander("🎯 Analyst Recommendations"):
                         try:
                             recommendations = stock.recommendations
+
                             if recommendations is not None and not recommendations.empty:
                                 st.subheader("Latest Analyst Ratings")
-                                # Convert index to DatetimeIndex for sorting/formatting
+
+                                # Ensure datetime index
                                 if not isinstance(recommendations.index, pd.DatetimeIndex):
                                     recommendations.index = pd.to_datetime(recommendations.index)
+
+                                # Sort in descending order
                                 recommendations = recommendations.sort_index(ascending=False)
 
-                                # Show a summary of ratings by grade (all firms)
-                                st.markdown("##### Analyst Ratings Summary (Last 12 Months)")
+                                # Filter recent recommendations (last 12 months)
                                 recent = recommendations[recommendations.index > (datetime.now() - timedelta(days=365))]
+
+                                # === Summary Chart ===
+                                st.markdown("##### Analyst Ratings Summary (Last 12 Months)")
                                 if not recent.empty and 'To Grade' in recent.columns:
                                     grade_counts = recent['To Grade'].value_counts()
                                     if not grade_counts.empty:
@@ -662,35 +668,37 @@ elif nav == "Stock Lookup":
                                             title="Recommendation Distribution (All Firms, Last 12 Months)"
                                         )
                                         st.plotly_chart(fig, use_container_width=True)
-                                        st.dataframe(grade_counts.rename_axis('Rating').reset_index(name='Count'), use_container_width=True, hide_index=True)
+                                        st.dataframe(grade_counts.rename_axis('Rating').reset_index(name='Count'),
+                                                     use_container_width=True, hide_index=True)
                                     else:
                                         st.info("No recent analyst ratings by grade available.")
                                 else:
                                     st.info("No recent analyst ratings by grade available.")
 
-                                # Show detailed table for recent recommendations (with highlighting)
+                                # === Detailed Table ===
                                 st.markdown("##### Detailed Recent Recommendations")
-                                display_cols = []
-                                if 'Firm' in recommendations.columns: display_cols.append('Firm')
-                                if 'To Grade' in recommendations.columns: display_cols.append('To Grade')
-                                if 'From Grade' in recommendations.columns: display_cols.append('From Grade')
-                                if 'Action' in recommendations.columns: display_cols.append('Action')
+                                display_cols = [col for col in ['Firm', 'From Grade', 'To Grade', 'Action'] if col in recommendations.columns]
                                 if display_cols:
-                                    table = recommendations[display_cols].copy()
-                                    table = table.head(30)
+                                    table = recommendations[display_cols].copy().head(30)
                                     table.index = table.index.strftime('%Y-%m-%d')
+
                                     def highlight_action(val):
-                                        if val == 'up': return 'background-color: #d4f7d4'
-                                        if val == 'down': return 'background-color: #ffd6d6'
+                                        if val == 'up':
+                                            return 'background-color: #d4f7d4'
+                                        elif val == 'down':
+                                            return 'background-color: #ffd6d6'
                                         return ''
+
                                     if 'Action' in table.columns:
                                         st.dataframe(table.style.applymap(highlight_action, subset=['Action']), use_container_width=True)
                                     else:
                                         st.dataframe(table, use_container_width=True)
                                 else:
                                     st.dataframe(recommendations.head(20), use_container_width=True)
+
                             else:
                                 st.info("Analyst recommendations unavailable for this stock.")
+
                         except Exception as e:
                             st.error(f"Could not fetch or display analyst recommendations: {e}")
                 
