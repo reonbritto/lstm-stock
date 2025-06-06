@@ -572,24 +572,59 @@ elif nav == "Stock Lookup":
                             f"https://feeds.finance.yahoo.com/rss/2.0/headline"
                             f"?s={lookup_ticker}&region=US&lang=en-US"
                         )
-                        feed = feedparser.parse(feed_url)
-                        entries = feed.entries or []
-                        if entries:
-                            st.subheader(f"Latest {len(entries)} Articles for {lookup_ticker}")
-                            for i, e in enumerate(entries, 1):
-                                title = e.get("title", "N/A")
-                                link  = e.get("link", "")
-                                date  = e.get("published", "")
-                                summary = e.get("summary", "")
-                                st.markdown(f"**{i}. {title}**")
-                                st.write(f"*{date}*")
-                                if link:
-                                    st.markdown(f"[Read full article]({link})")
-                                if summary:
-                                    st.write(summary[:200] + ("..." if len(summary) > 200 else ""))
-                                st.divider()
-                        else:
-                            st.info(f"No recent RSS news found for {lookup_ticker}.")
+                        try:
+                            with st.spinner(f"Fetching news for {lookup_ticker}..."):
+                                feed = feedparser.parse(feed_url)
+                                entries = feed.entries or []
+                            
+                            if entries:
+                                st.subheader(f"Latest {len(entries)} Articles for {info.get('longName', lookup_ticker)}")
+                                for i, entry in enumerate(entries, 1):
+                                    with st.container():
+                                        col1, col2 = st.columns([4, 1])
+                                        with col1:
+                                            title = entry.get("title", "N/A")
+                                            st.markdown(f"**{i}. {title}**")
+                                            
+                                            published_date = entry.get("published", "No date available")
+                                            # Attempt to parse and reformat date for consistency
+                                            try:
+                                                dt_obj = datetime.strptime(published_date, "%a, %d %b %Y %H:%M:%S %Z")
+                                                formatted_date = dt_obj.strftime("%B %d, %Y %H:%M %Z")
+                                            except ValueError:
+                                                formatted_date = published_date # Keep original if parsing fails
+                                            
+                                            st.caption(f"Published: {formatted_date}")
+
+                                        link = entry.get("link", "")
+                                        if link:
+                                            with col2:
+                                                st.link_button("Read Article ↗️", link, use_container_width=True)
+                                        
+                                        summary = entry.get("summary", "")
+                                        if summary:
+                                            # Basic HTML tag removal for cleaner summary
+                                            import re
+                                            clean_summary = re.sub('<[^<]+?>', '', summary)
+                                            st.markdown(f"<small>{clean_summary[:300]}{'...' if len(clean_summary) > 300 else ''}</small>", unsafe_allow_html=True)
+                                        
+                                        # Check for media content (thumbnails)
+                                        if 'media_content' in entry and entry.media_content:
+                                            for media in entry.media_content:
+                                                if 'url' in media:
+                                                    st.image(media['url'], width=150)
+                                                    break # Show first image
+                                        elif 'media_thumbnail' in entry and entry.media_thumbnail:
+                                             for thumbnail in entry.media_thumbnail:
+                                                if 'url' in thumbnail:
+                                                    st.image(thumbnail['url'], width=150)
+                                                    break # Show first image
+                                        
+                                        st.divider()
+                            else:
+                                st.info(f"No recent RSS news found for {lookup_ticker}.")
+                        except Exception as e:
+                            st.error(f"Could not fetch or parse news feed: {e}")
                 
                     # Institutional Holdings
                     with st.expander("🏛️ Institutional Holdings"):
@@ -634,42 +669,3 @@ elif nav == "Stock Lookup":
             if st.button(stock, key=f"popular_{stock}"):
                 st.session_state.lookup_ticker = stock
                 st.rerun()
-
-def _display_article(article, index):
-    """Helper function to display a news article consistently"""
-    # Get article data
-    title = article.get('title', 'N/A')
-    publisher = article.get('publisher', 'Unknown Source')
-    link = article.get('link', '')
-    summary = article.get('summary', '')
-    publish_time = article.get('providerPublishTime')
-                                            
-    # Format date if available
-    date_str = ""
-    if publish_time:
-        date_str = datetime.fromtimestamp(publish_time).strftime('%b %d, %Y')
-                                                
-    # Article card
-    st.markdown(f"### {index}. {title}")
-                                            
-    # Publication info
-    pub_col1, pub_col2 = st.columns([3, 1])
-    with pub_col1:
-        st.markdown(f"**Source:** {publisher} {f' • {date_str}' if date_str else ''}")
-    with pub_col2:
-        if link:
-            st.link_button("📰 Read Full Article", link)
-                                            
-    # Summary if available
-    if summary and len(summary) > 10:  # Avoid empty or very short summaries
-        st.markdown(f"**Summary:** {summary[:300]}..." if len(summary) > 300 else f"**Summary:** {summary}")
-                                            
-    # Add image if available
-    if article.get('thumbnail') and article.get('thumbnail', {}).get('resolutions'):
-        try:
-            img_url = article['thumbnail']['resolutions'][0]['url']
-            st.image(img_url, width=250)
-        except:
-            pass
-                                                
-    st.divider()
