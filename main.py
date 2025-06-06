@@ -568,44 +568,92 @@ elif nav == "Stock Lookup":
                     # News (via Yahoo Finance search API)
                     with st.expander("📰 Recent News"):
                         try:
-                            # call the canonical search endpoint for news
-                            url = (
-                                f"https://query2.finance.yahoo.com/v1/finance/search"
-                                f"?q={lookup_ticker}&quotesCount=0&newsCount=20"
-                            )
-                            resp = requests.get(url, timeout=5)
-                            if resp.ok:
-                                try:
-                                    data = resp.json()
-                                except ValueError:
-                                    news_items = []
-                                else:
-                                    news_items = data.get("news", [])
-                            else:
-                                news_items = []
+                            # Try multiple news sources
+                            news_items = []
                             
+                            # First try: Yahoo Finance search API
+                            try:
+                                # Try yfinance news first
+                                stock_news = stock.news
+                                if stock_news:
+                                    news_items = stock_news
+                            except:
+                                pass
+                            
+                            # If no news from yfinance, try Yahoo Finance API
+                            if not news_items:
+                                try:
+                                    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={lookup_ticker}&quotesCount=0&newsCount=20"
+                                    headers = {
+                                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                                    }
+                                    resp = requests.get(url, headers=headers, timeout=10)
+                                    if resp.status_code == 200:
+                                        data = resp.json()
+                                        news_items = data.get("news", [])
+                                except:
+                                    pass
+                            
+                            # If still no news, try alternative endpoint
+                            if not news_items:
+                                try:
+                                    alt_url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={lookup_ticker}&region=US&lang=en-US"
+                                    resp = requests.get(alt_url, timeout=10)
+                                    # This would need XML parsing, skip for now
+                                except:
+                                    pass
 
                             if news_items:
+                                st.subheader(f"📰 Latest News for {lookup_ticker}")
+                                st.caption(f"Found {len(news_items)} news articles")
                                 for idx, item in enumerate(news_items, 1):
                                     title = item.get("title", "N/A")
-                                    link  = item.get("link", "")
-                                    pub_ts = item.get("providerPublishTime")
-                                    date_str = (
-                                        datetime.fromtimestamp(pub_ts).strftime("%b %d, %Y")
-                                        if pub_ts else ""
-                                    )
+                                    link = item.get("link", "")
+                                    publisher = item.get("publisher", "Unknown")
+                                    
+                                    # Handle different timestamp formats
+                                    pub_ts = item.get("providerPublishTime") or item.get("publish_time")
+                                    if pub_ts:
+                                        try:
+                                            if isinstance(pub_ts, str):
+                                                # Try parsing ISO format
+                                                from datetime import datetime as dt
+                                                date_obj = dt.fromisoformat(pub_ts.replace('Z', '+00:00'))
+                                                date_str = date_obj.strftime("%b %d, %Y")
+                                            else:
+                                                date_str = datetime.fromtimestamp(pub_ts).strftime("%b %d, %Y")
+                                        except:
+                                            date_str = "Recent"
+                                    else:
+                                        date_str = "Recent"
+                                    
                                     st.markdown(f"**{idx}. {title}**")
-                                    st.write(f"*{item.get('publisher','N/A')} • {date_str}*")
+                                    st.write(f"*{publisher} • {date_str}*")
                                     if link:
-                                        st.markdown(f"[Read full article]({link})")
+                                        st.link_button("📖 Read Article", link, key=f"news_{idx}")
                                     summary = item.get("summary") or item.get("snippet", "")
                                     if summary:
-                                        st.write(summary)
+                                        st.write(f"**Summary:** {summary[:200]}...")
+                                    
+                                    # Add thumbnail if available
+                                    if item.get('thumbnail') and item.get('thumbnail', {}).get('resolutions'):
+                                        try:
+                                            img_url = item['thumbnail']['resolutions'][0]['url']
+                                            st.image(img_url, width=200)
+                                        except:
+                                            pass
                                     st.divider()
                             else:
-                                st.info("No recent news found for this ticker.")
+                                st.info("📰 No recent news found for this ticker.")
+                                st.markdown("**Alternative news sources:**")
+                                st.markdown(f"- [Yahoo Finance News](https://finance.yahoo.com/quote/{lookup_ticker}/news)")
+                                st.markdown(f"- [MarketWatch](https://www.marketwatch.com/investing/stock/{lookup_ticker})")
+                                st.markdown(f"- [Seeking Alpha](https://seekingalpha.com/symbol/{lookup_ticker}/news)")
                         except Exception as e:
-                            st.error(f"Error fetching news: {e}")
+                            st.warning("Unable to fetch news at this time.")
+                            st.markdown("**Try these news sources:**")
+                            st.markdown(f"- [Yahoo Finance](https://finance.yahoo.com/quote/{lookup_ticker}/news)")
+                            st.markdown(f"- [CNBC](https://www.cnbc.com/quotes/{lookup_ticker})")
                 
                     # Institutional Holdings
                     with st.expander("🏛️ Institutional Holdings"):
