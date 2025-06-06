@@ -467,7 +467,7 @@ elif nav == "Stock Lookup":
                         beta = info.get('beta')
                         
                         st.metric("P/E Ratio", f"{pe_ratio:.2f}" if pe_ratio else "N/A")
-                        st.metric("Dividend Yield", f"{dividend_yield}%" if dividend_yield else "N/A")   
+                        st.metric("Dividend Yield", f"{dividend_yield*100:.2f}%" if dividend_yield else "N/A")   
                         st.metric("Beta", f"{beta:.2f}" if beta else "N/A")
                 
                     # Company Information
@@ -724,21 +724,34 @@ elif nav == "Stock Lookup":
 
 
                                 # Detailed Historical Recommendations Table
-                                st.markdown("##### Detailed Historical Recommendations")
-                                display_cols = {
-                                    'Firm': 'Analyst Firm', 'To Grade': 'Rating',
-                                    'From Grade': 'Previous Rating', 'Action': 'Action'
-                                }
-                                existing_display_cols = {k: v for k, v in display_cols.items() if k in recommendations.columns}
+                                st.markdown("##### Detailed Historical Recommendations by Firm") # Updated subheading
                                 
-                                if existing_display_cols:
-                                    recommendations_display = recommendations[list(existing_display_cols.keys())].copy()
-                                    recommendations_display.rename(columns=existing_display_cols, inplace=True)
+                                # Define desired column order, with 'Firm' first
+                                desired_cols_in_order = ['Firm', 'To Grade', 'From Grade', 'Action']
+                                display_cols_map = {
+                                    'Firm': 'Analyst Firm',
+                                    'To Grade': 'Rating',
+                                    'From Grade': 'Previous Rating',
+                                    'Action': 'Action'
+                                }
+
+                                # Filter to columns that actually exist in recommendations.columns, maintaining desired order
+                                available_display_cols = [col for col in desired_cols_in_order if col in recommendations.columns]
+                                
+                                if available_display_cols:
+                                    recommendations_display = recommendations[available_display_cols].copy()
+                                    # Rename columns for display
+                                    renamed_cols_map = {col: display_cols_map[col] for col in available_display_cols if col in display_cols_map}
+                                    recommendations_display.rename(columns=renamed_cols_map, inplace=True)
+                                    
                                     recommendations_display.index = recommendations_display.index.strftime('%Y-%m-%d')
                                     st.dataframe(recommendations_display.head(20), use_container_width=True)
-                                else: # Fallback to raw data if specific columns are not found
-                                    st.caption("Displaying raw historical recommendations data as standard columns were not found.")
-                                    st.dataframe(recommendations.head(20), use_container_width=True)
+                                else: 
+                                    # Fallback if specific columns are not found, display raw data but still format index
+                                    st.caption("Displaying raw historical recommendations data as standard columns (e.g., Firm, Rating) were not found.")
+                                    recommendations_display_raw = recommendations.copy()
+                                    recommendations_display_raw.index = recommendations_display_raw.index.strftime('%Y-%m-%d')
+                                    st.dataframe(recommendations_display_raw.head(20), use_container_width=True)
                             
                             if not recommendations_data_available:
                                 st.info("Analyst recommendations data unavailable for this stock.")
