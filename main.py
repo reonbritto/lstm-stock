@@ -712,117 +712,120 @@ elif nav == "Market News":
                     st.warning(f"Could not fetch news for {symbol}. Trying general market news instead.")
                     return scrape_yahoo_finance_news("General Market", None, max_articles)
                 
-        else:
-            # General market news using multiple sources
-            try:
-                # Method 1: Try RSS feeds first
-                rss_urls = {
-                    "General Market": [
-                        "https://feeds.finance.yahoo.com/rss/2.0/headline",
-                        "https://finance.yahoo.com/rss/headline"
-                    ],
-                    "Crypto": [
-                        "https://feeds.finance.yahoo.com/rss/2.0/category-crypto"
-                    ],
-                    "Economy": [
-                        "https://feeds.finance.yahoo.com/rss/2.0/category-economy"
-                    ],
-                    "Technology": [
-                        "https://feeds.finance.yahoo.com/rss/2.0/category-technology"
-                    ]
-                }
-                
-                feed_urls = rss_urls.get(category, rss_urls["General Market"])
-                
-                for rss_url in feed_urls:
-                    try:
-                        feed = feedparser.parse(rss_url)
-                        
-                        if feed.entries:
-                            for entry in feed.entries[:max_articles]:
-                                # Parse publication time
-                                pub_time = datetime.now() - timedelta(hours=2)
-                                if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                                    try:
-                                        pub_time = datetime(*entry.published_parsed[:6])
-                                    except:
-                                        pass
-                                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-                                    try:
-                                        pub_time = datetime(*entry.updated_parsed[:6])
-                                    except:
-                                        pass
-                                
-                                # Clean summary
-                                summary = entry.get('summary', entry.get('description', 'No summary available'))
-                                if summary:
-                                    # Remove HTML tags from summary
-                                    from bs4 import BeautifulSoup
-                                    summary = BeautifulSoup(summary, 'html.parser').get_text()
-                                    summary = summary.strip()[:300]  # Limit length
-                                
-                                articles.append({
-                                    'title': entry.get('title', 'Market News Update'),
-                                    'summary': summary,
-                                    'link': entry.get('link', ''),
-                                    'publisher': entry.get('source', {}).get('href', 'Yahoo Finance') if isinstance(entry.get('source'), dict) else 'Yahoo Finance',
-                                    'publish_time': pub_time,
-                                    'category': category,
-                                    'thumbnail': ''
-                                })
-                                
-                            break  # If we got articles from this feed, stop trying others
-                    except Exception as feed_error:
-                        continue  # Try next feed
-                        
-                # Method 2: If RSS failed, try direct API approach
-                if not articles:
-                    # Fallback to sample news data
-                    sample_news = [
-                        {
-                            'title': 'Market Update: Major Indices Show Mixed Performance',
-                            'summary': 'Financial markets experienced mixed trading as investors weigh economic indicators and corporate earnings reports.',
-                            'link': 'https://finance.yahoo.com',
-                            'publisher': 'Yahoo Finance',
-                            'publish_time': datetime.now() - timedelta(hours=1),
-                            'category': category,
-                            'thumbnail': ''
-                        },
-                        {
-                            'title': 'Federal Reserve Policy Decision Expected This Week',
-                            'summary': 'Analysts anticipate key monetary policy announcements that could impact market direction.',
-                            'link': 'https://finance.yahoo.com',
-                            'publisher': 'Yahoo Finance',
-                            'publish_time': datetime.now() - timedelta(hours=3),
-                            'category': category,
-                            'thumbnail': ''
-                        },
-                        {
-                            'title': 'Technology Sector Leads Market Gains',
-                            'summary': 'Tech stocks outperformed broader market indices amid positive earnings results.',
-                            'link': 'https://finance.yahoo.com',
-                            'publisher': 'Yahoo Finance',
-                            'publish_time': datetime.now() - timedelta(hours=5),
-                            'category': category,
-                            'thumbnail': ''
-                        }
-                    ]
-                    articles.extend(sample_news)
+            else:
+                # General market news using multiple sources
+                try:
+                    # Method 1: Try RSS feeds first
+                    rss_urls = {
+                        "General Market": [
+                            "https://feeds.finance.yahoo.com/rss/2.0/headline",
+                            "https://finance.yahoo.com/rss/headline"
+                        ],
+                        "Crypto": [
+                            "https://feeds.finance.yahoo.com/rss/2.0/category-crypto"
+                        ],
+                        "Economy": [
+                            "https://feeds.finance.yahoo.com/rss/2.0/category-economy"
+                        ],
+                        "Technology": [
+                            "https://feeds.finance.yahoo.com/rss/2.0/category-technology"
+                        ]
+                    }
                     
-            except Exception as general_error:
-                st.error(f"Error fetching general news: {str(general_error)}")
-                return [], f"Error fetching news: {str(general_error)}"
+                    feed_urls = rss_urls.get(category, rss_urls["General Market"])
+                    
+                    for rss_url in feed_urls:
+                        try:
+                            feed = feedparser.parse(rss_url)
+                            
+                            if feed.entries:
+                                for entry in feed.entries[:max_articles]:
+                                    # Parse publication time
+                                    pub_time = datetime.now() - timedelta(hours=2)
+                                    if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                                        try:
+                                            pub_time = datetime(*entry.published_parsed[:6])
+                                        except:
+                                            pass
+                                    elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                                        try:
+                                            pub_time = datetime(*entry.updated_parsed[:6])
+                                        except:
+                                            pass
+                                
+                                    # Clean summary
+                                    summary = entry.get('summary', entry.get('description', 'No summary available'))
+                                    if summary:
+                                        # Remove HTML tags from summary
+                                        try:
+                                            from bs4 import BeautifulSoup
+                                            summary = BeautifulSoup(summary, 'html.parser').get_text()
+                                            summary = summary.strip()[:300]  # Limit length
+                                        except:
+                                            summary = summary[:300]  # Fallback if BeautifulSoup fails
+                                
+                                    articles.append({
+                                        'title': entry.get('title', 'Market News Update'),
+                                        'summary': summary,
+                                        'link': entry.get('link', ''),
+                                        'publisher': entry.get('source', {}).get('href', 'Yahoo Finance') if isinstance(entry.get('source'), dict) else 'Yahoo Finance',
+                                        'publish_time': pub_time,
+                                        'category': category,
+                                        'thumbnail': ''
+                                    })
+                                    
+                            break  # If we got articles from this feed, stop trying others
+                        except Exception as feed_error:
+                            continue  # Try next feed
+                        
+                    # Method 2: If RSS failed, try fallback sample data
+                    if not articles:
+                        # Fallback to sample news data
+                        sample_news = [
+                            {
+                                'title': 'Market Update: Major Indices Show Mixed Performance',
+                                'summary': 'Financial markets experienced mixed trading as investors weigh economic indicators and corporate earnings reports.',
+                                'link': 'https://finance.yahoo.com',
+                                'publisher': 'Yahoo Finance',
+                                'publish_time': datetime.now() - timedelta(hours=1),
+                                'category': category,
+                                'thumbnail': ''
+                            },
+                            {
+                                'title': 'Federal Reserve Policy Decision Expected This Week',
+                                'summary': 'Analysts anticipate key monetary policy announcements that could impact market direction.',
+                                'link': 'https://finance.yahoo.com',
+                                'publisher': 'Yahoo Finance',
+                                'publish_time': datetime.now() - timedelta(hours=3),
+                                'category': category,
+                                'thumbnail': ''
+                            },
+                            {
+                                'title': 'Technology Sector Leads Market Gains',
+                                'summary': 'Tech stocks outperformed broader market indices amid positive earnings results.',
+                                'link': 'https://finance.yahoo.com',
+                                'publisher': 'Yahoo Finance',
+                                'publish_time': datetime.now() - timedelta(hours=5),
+                                'category': category,
+                                'thumbnail': ''
+                            }
+                        ]
+                        articles.extend(sample_news)
+                        
+                except Exception as general_error:
+                    st.error(f"Error fetching general news: {str(general_error)}")
+                    return [], f"Error fetching news: {str(general_error)}"
         
-        # Validate and clean articles
-        valid_articles = []
-        for article in articles:
-            if article.get('title') and article['title'] != 'No Title':
-                valid_articles.append(article)
-        
-        return valid_articles[:max_articles], None
-        
-    except Exception as e:
-        return [], f"Error fetching news: {str(e)}"
+            # Validate and clean articles
+            valid_articles = []
+            for article in articles:
+                if article.get('title') and article['title'] != 'No Title':
+                    valid_articles.append(article)
+            
+            return valid_articles[:max_articles], None
+            
+        except Exception as e:
+            return [], f"Error fetching news: {str(e)}"
 
 def display_news_card(article, index):
     """Display individual news card with professional styling"""
