@@ -569,16 +569,20 @@ elif nav == "Stock Lookup":
                         try:
                             news = stock.news
                             if news:
-                                for i, article in enumerate(news[:5], 1):  # Show top 5 news
-                                    with st.container():
-                                        st.write(f"**{i}. {article.get('title', 'N/A')}**")
-                                        col_news1, col_news2 = st.columns([2, 1])
-                                        with col_news1:
-                                            st.write(f"*Source: {article.get('publisher', 'N/A')}*")
-                                        with col_news2:
-                                            if article.get('link'):
-                                                st.link_button("Read Full Article", article['link'])
-                                        st.divider()
+                                st.subheader("Latest News Headlines")
+                                for i, article in enumerate(news[:10], 1):  # Show top 10 news
+                                    title = article.get('title', 'N/A')
+                                    publisher = article.get('publisher', 'N/A')
+                                    published_time = article.get('providerPublishTime', None)
+                                    link = article.get('link', '')
+                                    summary = article.get('summary', '')
+                                    st.write(f"**{i}. {title}**")
+                                    st.write(f"*Source: {publisher}*")
+                                    if summary:
+                                        st.caption(summary[:200] + ("..." if len(summary) > 200 else ""))
+                                    if link:
+                                        st.markdown(f"[Read Full Article]({link})")
+                                    st.divider()
                             else:
                                 st.info("No recent news available")
                         except Exception as news_error:
